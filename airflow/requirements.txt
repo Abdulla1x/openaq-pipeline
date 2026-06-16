@@ -1,0 +1,19 @@
+# ── Airflow providers ────────────────────────────────────────────────────────
+# Pins are tested against apache/airflow:2.9.1 base image.
+apache-airflow-providers-google==10.19.0
+
+# ── OpenAQ HTTP client ────────────────────────────────────────────────────────
+requests==2.31.0
+
+# ── GCP libraries ─────────────────────────────────────────────────────────────
+google-cloud-storage==2.16.0
+google-cloud-bigquery==3.19.0
+db-dtypes==1.2.0          # required by bigquery pandas integration
+
+# ── dbt (BigQuery adapter) ────────────────────────────────────────────────────
+dbt-core==1.8.3
+dbt-bigquery==1.8.2
+
+# ── Data processing ───────────────────────────────────────────────────────────
+pandas==2.2.2
+pyarrow==16.1.0           # BigQuery <-> pandas serialisation
