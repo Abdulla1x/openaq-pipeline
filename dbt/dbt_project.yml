@@ -1,0 +1,28 @@
+name: openaq
+version: '1.0.0'
+config-version: 2
+
+profile: openaq
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  openaq:
+    staging:
+      +materialized: view
+      +schema: dbt
+    intermediate:
+      +materialized: table
+      +schema: dbt
+    mart:
+      +materialized: table
+      +schema: dbt
