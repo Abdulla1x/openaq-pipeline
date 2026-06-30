@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff check
+        run: ruff check .
+      - name: SQLFluff lint
+        run: sqlfluff lint dbt/models --dialect bigquery
+        continue-on-error: true
+
+  dbt-parse:
+    name: dbt-parse
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: dummy-project
+      BIGQUERY_DATASET: openaq_dbt
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/fake-key.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dbt
+        run: pip install dbt-core==1.8.3 dbt-bigquery==1.8.2
+      - name: Create fake credentials file
+        run: echo '{}' > /tmp/fake-key.json
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps
+      - name: dbt parse
+        working-directory: dbt
+        run: dbt parse
+        env:
+          DBT_PROFILES_DIR: .
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests
+        run: pytest tests/unit/ -v

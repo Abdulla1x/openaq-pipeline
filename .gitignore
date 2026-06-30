@@ -26,7 +26,6 @@ standalone_admin_password.txt
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
-dbt/profiles.yml          # contains BigQuery credentials — use profiles.yml.example
 
 # ── GCP credentials ───────────────────────────────────────────────────────────
 *-key.json
