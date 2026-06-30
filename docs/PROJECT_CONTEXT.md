@@ -1,20 +1,20 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.0 · **Last updated:** 2026-06-18 · **Current phase:** Phase 0 (not started)
-> **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a Claude Project file for chat sessions.
+> **Version:** 1.1 · **Last updated:** 2026-06-30 · **Current phase:** Phase 1 (not started)
+> **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
 
 ---
 
 ## 0. How to use this document
 
-This file initializes every phased work session (Claude chat for design, Claude Code for execution). Read it first, then work only on the **current phase** named above.
+This file initializes every phased work session — a design/planning pass, followed by an implementation pass. Read it first, then work only on the **current phase** named above.
 
 Rules for whoever (human or model) edits this file:
 - **It is a living doc.** At the end of each phase, update the relevant sections, bump the version, and add a changelog entry (Section 11). Do not let it drift from reality — a stale context file is worse than none.
 - **Decisions carry rationale.** When a guardrail changes, record *why*, not just the new state (Section 4). The "why" is the point; the project is a learning exercise as much as a deliverable.
 - **Schema marked `[ASSERTED]` is a guess** until real data confirms it. Any phase downstream of ingestion must inspect the actual BigQuery table, not trust this file's asserted schema.
-- **One source of truth.** This file lives in the repo so Claude Code reads it natively; it is mirrored as a Project file so chat sessions see it without pasting. Edit the repo copy; re-sync the mirror when it changes.
+- **One source of truth.** This file lives in the repo so it's read natively during implementation sessions; it is mirrored as a reference copy so design sessions see it without pasting. Edit the repo copy; re-sync the mirror when it changes.
 
 ---
 
@@ -76,7 +76,7 @@ Looker Studio  ── UAE vs PK trends, exceedance rates, coverage panel
 
 ## 4. Architectural guardrails (decisions + rationale)
 
-Each rule below corrects a flaw found in the original Sonnet-4.6 design. Do not regress them.
+Each rule below corrects a flaw found in an earlier draft of this design. Do not regress them.
 
 **G1 — ELT, not ETL (schema-on-read).** Land raw API JSON into a single `raw_payload JSON` column in BigQuery (+ `ingested_at`, `source_uri`). Parse/typecast in dbt staging. *Why:* a typed parse-at-load couples ingestion to the API schema; any v3 field rename then breaks the load. With schema-on-read, a schema change only breaks a dbt model — fixable and re-runnable.
 
@@ -152,16 +152,38 @@ Interface contracts between phases: GCS raw layout (2→3), `raw_measurements` t
 
 ## 7. Current state (snapshot — update each phase)
 
-**Done (from original build):**
-- Dev environment fully configured (WSL2/Ubuntu 24.04, Docker Desktop 29.5.3, Git, Claude Code on Pro).
-- Project structure scaffolded; `docker-compose.yml`, `airflow/Dockerfile`, `requirements.txt` written.
-- Airflow 2.9.1 running (4 containers healthy, UI at :8080); 4 commits pushed.
-- Resolved bugs: pandas/providers-google conflict (removed pins); logs perms (chown 50000:0); volume path mismatch; docker socket group; PAT `workflow` scope (CI temporarily removed — **to be restored in Phase 0**).
-- `.env` has Fernet key set (**rotate**); GCP + OpenAQ credentials are placeholders.
+**Phase 0 — complete (merged to main as commit 700fe1a, 2026-06-30).**
 
-**Not started:** everything in §6 Phases 0–7. No ingestion, DAG, dbt, GCP, or dashboard code exists yet.
+Done:
+- All empty scaffold files removed (Python stubs, Terraform stubs, dbt schema stubs, per-country fetchers that violated G12). `.gitkeep` placeholders added where directories must persist empty.
+- Fernet key rotated; old leaked key no longer in `.env`.
+- `pyproject.toml` configured (ruff + pytest, `pythonpath = ["."]` for test imports without an editable install).
+- `Makefile` with `up`/`down`/`logs`/`lint`/`test` targets.
+- dbt minimal config: `dbt_project.yml`, `dbt/profiles.yml` (committed — uses `{{ env_var() }}` only, no secrets, per G10), `dbt/packages.yml` (dbt_utils).
+- `scripts/bootstrap.sh` written (checks docker/git/python3, copies `.env.example`).
+- `ingestion/constants.py` — WHO 2021 thresholds (G5) as the Phase 0-3 source of truth, with 5 passing unit tests in `tests/unit/test_who_constants.py`. Will be superseded by a dbt seed in Phase 4 — keep both in sync until then.
+- `docs/architecture.md` — concise architecture summary distinct from this file.
+- `.github/workflows/ci.yml` — three jobs (`lint`, `dbt-parse`, `pytest`), all passing on PR #1.
+- This file committed to the repo for the first time at `docs/PROJECT_CONTEXT.md` (previously existed only as a personal planning document, never in version control).
+- Branch protection (GitHub Ruleset, not Classic) active on `main`: requires PR, requires `lint`+`dbt-parse`+`pytest` to pass, blocks force pushes, no bypass.
+- **Commit attribution.** Disabled automatic commit co-authorship trailers going forward; one local commit amended to remove a trailer that had already been added before push. Pre-existing pushed commits on main predate this and were never affected.
 
-**Known liabilities:** the "remove CI workflows" commit in history; empty scaffold files (`infra/*.tf`, `Makefile`, `pyproject.toml`, `docs/`, `tests/`); the forked `CourseScraping-BU` repo (remove/rebuild if referenced).
+**Phase 0 exit criteria — verified:**
+- [x] CI green (ruff, sqlfluff, dbt parse, pytest) — confirmed on PR #1, all 3 jobs passed
+- [x] Branch protection on main active and enforcing (confirmed: PR could not show "Ready to merge" until ruleset was properly configured with Active status + target branch + required checks)
+- [x] No empty scaffold files
+- [x] Fernet key rotated
+
+**Not started:** everything in §6 Phases 1–7. No ingestion, DAG, dbt models, GCP resources, or dashboard exist yet.
+
+**Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded; the forked `CourseScraping-BU` repo (remove/rebuild if referenced) — not addressed in Phase 0, still open.
+
+## 7.5 Deviations and discoveries during Phase 0 (for institutional memory)
+
+- **Local Python version drift.** Host `python3` resolves to 3.14.4 (confirmed via `.venv` creation), while `pyproject.toml`'s `requires-python`, the Airflow Docker image, and this document's §2 stack table all target 3.12. Not yet a problem (Phase 0 code has no version-specific behavior), but will need resolving before Phase 2 ingestion code is written — either pin a 3.12 venv explicitly or confirm 3.14 compatibility for all Phase 2+ dependencies (especially `apache-airflow-providers-google`, which has historically had narrow pandas/Python version constraints — see the pandas conflict in the original build).
+- **`sqlfluff` is currently a no-op.** `continue-on-error: true` on the SQLFluff CI step was added defensively, but empirically (tested locally) SQLFluff exits 0 on an empty `dbt/models/` directory regardless. The flag has zero effect today. It becomes load-bearing in Phase 4 when real `.sql` files land — at that point, decide explicitly whether lint failures should block merges (remove the flag) or only warn (keep it, but make that a deliberate choice, not inherited inertia).
+- **GitHub Rulesets, not Classic branch protection.** Used the newer Rulesets UI instead of Classic. Functionally equivalent for our needs (require PR, require status checks, block force push) but the setup flow is non-obvious — a new ruleset defaults to Enforcement: Disabled and no target branch, both of which must be explicitly set or the rule silently does nothing while looking configured.
+- **Required-check names matter for branch protection.** Two CI jobs were initially both named `test` (intended to simplify required-checks down to one name); this was a real bug, not a style choice — GitHub's Checks API keys on the job's `name:` field, and whichever job reports last silently overwrites the other's status, making branch protection non-deterministic. Caught before merge; fixed to `lint`/`dbt-parse`/`pytest`.
 
 ---
 
@@ -173,11 +195,11 @@ Interface contracts between phases: GCS raw layout (2→3), `raw_measurements` t
 
 ---
 
-## 9. Working preferences (for any assisting model)
+## 9. Working preferences
 
 - Guide step by step with the "why"; do not dump a finished codebase.
 - Brutally honest; surface tradeoffs; state assumptions; push back when warranted; no sycophancy or filler.
-- Claude Code = scaffolding/writing/debugging in the terminal. Claude chat = planning/design/learning.
+- Implementation sessions = scaffolding/writing/debugging in the terminal. Design sessions = planning/architecture/learning.
 - Prefer editing over rewriting whole files. Keep solutions simple and direct.
 
 ---
@@ -194,3 +216,4 @@ Interface contracts between phases: GCS raw layout (2→3), `raw_measurements` t
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-06-18 | Initial context doc. Captures architectural review corrections (G1–G12), phase roadmap, and career framing. |
+| 1.1 | 2026-06-30 | Phase 0 complete (merged main as 700fe1a). CI green, branch protection active, all scaffolds resolved, Fernet key rotated. Added §7.5 documenting Python version drift (host 3.14 vs target 3.12), sqlfluff no-op status until Phase 4, and the duplicate-job-name branch-protection bug caught pre-merge. |
