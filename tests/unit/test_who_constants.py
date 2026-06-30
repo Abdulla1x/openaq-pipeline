@@ -1,4 +1,4 @@
-from ingestion.constants import WHO_THRESHOLDS_UGM3, WHO_THRESHOLD_CO_MGM3
+from ingestion.constants import WHO_THRESHOLD_CO_MGM3, WHO_THRESHOLDS_UGM3
 
 
 def test_pm25_thresholds():
