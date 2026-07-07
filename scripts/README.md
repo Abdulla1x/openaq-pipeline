@@ -1,12 +1,15 @@
 # scripts/
 
-Utility shell scripts for local development and operations.
+Utility shell scripts for local development.
 
-## Contents
+## Contents (current)
 
 ```
 scripts/
-├── bootstrap.sh      First-time setup: create GCS buckets, BQ datasets,
-│                     initialize Airflow DB, create default Airflow connections
-└── run_backfill.sh   Trigger Airflow DAG backfill for a historical date range
+└── bootstrap.sh    First-time local setup: verifies docker/git/python3 are
+                    installed and creates .env from .env.example. Does NOT
+                    touch GCP — all cloud resources are provisioned via
+                    Terraform in infra/ (guardrail G11).
 ```
+
+A backfill helper is planned for Phase 5.

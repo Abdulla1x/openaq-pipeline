@@ -1,35 +1,32 @@
 # dbt/
 
-dbt transformation project with a three-layer model architecture targeting BigQuery.
+dbt transformation project with a three-layer model architecture targeting
+BigQuery. Models land in Phase 4; today only the project config exists.
 
-## Layer responsibilities
+## Connection profile
+
+`profiles.yml` **is committed** — it contains only `{{ env_var(...) }}`
+references, no secrets (guardrail G10). Set `GCP_PROJECT_ID`,
+`BIGQUERY_DATASET`, and `GOOGLE_APPLICATION_CREDENTIALS` in your environment
+(or `.env`) and dbt resolves them at runtime. Do not create a local copy with
+real values inside the repo.
+
+## Layer responsibilities (Phase 4)
 
 | Layer | Directory | Purpose |
 |---|---|---|
-| Staging | `models/staging/` | Cast types, rename columns, apply basic filters — one model per source table |
-| Intermediate | `models/intermediate/` | Join staging models, apply business logic, denormalize |
-| Mart | `models/mart/` | Final analytical tables consumed by Looker Studio |
+| Staging | `models/staging/` | Parse raw JSON, dedup, standardize units (views) |
+| Intermediate | `models/intermediate/` | Daily aggregates + completeness dimensions (`reading_count`, `hours_covered` — exposed as columns, never a silent filter, per G7) |
+| Mart | `models/mart/` | 24h exceedance vs WHO thresholds, plus a separate annual-mean model (grain discipline, G6) |
 
-## Contents
+## Contents (current)
 
 ```
 dbt/
-├── models/
-│   ├── staging/
-│   │   ├── _sources.yml    Declares BigQuery raw tables as dbt sources
-│   │   └── _schema.yml     Column-level docs and tests for staging models
-│   ├── intermediate/
-│   │   └── _schema.yml
-│   └── mart/
-│       └── _schema.yml
-├── macros/                 Reusable Jinja macros shared across models
-├── tests/                  Custom singular data tests (SQL assertions)
-├── seeds/                  Static reference CSVs loaded into BigQuery
-├── analyses/               Ad-hoc SQL explorations (not materialized)
-├── dbt_project.yml         Project config: name, model paths, materializations
-├── packages.yml            dbt package dependencies (dbt-utils, etc.)
-└── profiles.yml.example    BigQuery connection template — copy to profiles.yml
+├── models/           staging/ intermediate/ mart/ — empty until Phase 4
+├── seeds/            who_thresholds seed lands in Phase 4 (G5)
+├── macros/ tests/ analyses/   empty until needed
+├── dbt_project.yml   Project config: name, paths, materializations
+├── packages.yml      dbt package dependencies (dbt_utils)
+└── profiles.yml      Committed BigQuery profile using env_var() only
 ```
-
-> `profiles.yml` is gitignored. Copy `profiles.yml.example` and fill in your
-> GCP project and dataset details before running dbt locally.

@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.1 · **Last updated:** 2026-06-30 · **Current phase:** Phase 1 (not started)
+> **Version:** 1.2 · **Last updated:** 2026-07-07 · **Current phase:** Phase 1 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
 
 ---
@@ -178,18 +178,28 @@ Done:
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded; the forked `CourseScraping-BU` repo (remove/rebuild if referenced) — not addressed in Phase 0, still open.
 
+**Pre-Phase-1 hygiene pass (2026-07-07 audit).** A repo audit found that Phase 0's scaffold cleanup removed anti-pattern *code* but not the docs describing it, and that "no empty scaffold files" was not fully true. Fixed in the `chore/pre-phase-1-hygiene` PR:
+- Rewrote six stale scaffold-era READMEs (root, `ingestion/`, `dbt/`, `airflow/`, `tests/`, `scripts/`) that still described the pre-correction design as present "Contents" — including per-country fetchers (`uae.py`/`pakistan.py`, banned by G12), a `bootstrap.sh` that "provisions GCP resources" (contradicts G11; the real script only checks tools and copies `.env`), and instructions to copy a gitignored `profiles.yml` (opposite of the implemented G10 decision). READMEs now describe what exists and mark future files as "planned (Phase N)".
+- Deleted four remaining empty tracked files: `ingestion/openaq/fetchers/__init__.py` (skeleton of the removed anti-pattern), `dbt/profiles.yml.example` (obsolete under G10), `airflow/config/airflow.cfg` (never mounted by docker-compose), `tests/conftest.py` (redundant — pytest `pythonpath` config covers imports).
+- Fixed invalid `build-backend` in `pyproject.toml` (`setuptools.backends.legacy:build` → `setuptools.build_meta`); the bad value would have broken any future `pip install -e .`.
+- Verified externally: CI runs green on main, branch-protection ruleset active with the three required checks (via GitHub API); `openaq_architecture_spec.md` exists nowhere in the tree or git history; `.env` was never tracked.
+
 ## 7.5 Deviations and discoveries during Phase 0 (for institutional memory)
 
 - **Local Python version drift.** Host `python3` resolves to 3.14.4 (confirmed via `.venv` creation), while `pyproject.toml`'s `requires-python`, the Airflow Docker image, and this document's §2 stack table all target 3.12. Not yet a problem (Phase 0 code has no version-specific behavior), but will need resolving before Phase 2 ingestion code is written — either pin a 3.12 venv explicitly or confirm 3.14 compatibility for all Phase 2+ dependencies (especially `apache-airflow-providers-google`, which has historically had narrow pandas/Python version constraints — see the pandas conflict in the original build).
 - **`sqlfluff` is currently a no-op.** `continue-on-error: true` on the SQLFluff CI step was added defensively, but empirically (tested locally) SQLFluff exits 0 on an empty `dbt/models/` directory regardless. The flag has zero effect today. It becomes load-bearing in Phase 4 when real `.sql` files land — at that point, decide explicitly whether lint failures should block merges (remove the flag) or only warn (keep it, but make that a deliberate choice, not inherited inertia).
 - **GitHub Rulesets, not Classic branch protection.** Used the newer Rulesets UI instead of Classic. Functionally equivalent for our needs (require PR, require status checks, block force push) but the setup flow is non-obvious — a new ruleset defaults to Enforcement: Disabled and no target branch, both of which must be explicitly set or the rule silently does nothing while looking configured.
 - **Required-check names matter for branch protection.** Two CI jobs were initially both named `test` (intended to simplify required-checks down to one name); this was a real bug, not a style choice — GitHub's Checks API keys on the job's `name:` field, and whichever job reports last silently overwrites the other's status, making branch protection non-deterministic. Caught before merge; fixed to `lint`/`dbt-parse`/`pytest`.
+- **(2026-07-07 audit) Scaffold READMEs are part of the design surface.** The Phase 0 cleanup deleted anti-pattern code but left six READMEs describing that code as present — a future session scaffolding from them would have rebuilt the banned design. Lesson: when a guardrail kills a pattern, grep the *docs* for it too.
+- **(2026-07-07 audit) `docker-compose.yml` defaults `GOOGLE_APPLICATION_CREDENTIALS` to `/opt/airflow/keys/service-account.json`, but no `./keys` volume is mounted.** Deliberately deferred to Phase 2/3 when GCP auth becomes real — decide then between mounting a keys dir or another delivery mechanism.
+- **(2026-07-07 audit) O3 threshold labeling debt in `ingestion/constants.py`.** The dict stores O3's 8-hour value under the `"24h"` key and peak-season under `"annual"` (commented, tested). Acceptable shorthand for a two-key dict; the Phase 4 `who_thresholds` seed has an explicit `averaging_period` column and must record `8h` / `peak_season` correctly, not inherit the shorthand.
 
 ---
 
 ## 8. Genuinely open questions
 
 - **OpenAQ v3 free-tier rate limits** — unknown exact limits; the per-sensor fan-out makes this load-bearing for both daily runs and backfill. Confirm and implement backoff before Phase 5.
+- **The `OPENAQ_API_KEY` in `.env` may be invalid** — a 2026-07-07 probe of `/v3/countries` with it returned HTTP 401. Verify or regenerate at explore.openaq.org before Phase 2, where it becomes load-bearing. (Same probe confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
 - **Backfill volume** — hundreds of sensors × 1–2 years × pagination = heavy. Chunk by date window and/or sensor batch.
 - **Verified vs asserted schema** — `raw_measurements` and the parsed staging columns are `[ASSERTED]` until Phase 2/3 land real data.
 
@@ -217,3 +227,4 @@ Done:
 |---|---|---|
 | 1.0 | 2026-06-18 | Initial context doc. Captures architectural review corrections (G1–G12), phase roadmap, and career framing. |
 | 1.1 | 2026-06-30 | Phase 0 complete (merged main as 700fe1a). CI green, branch protection active, all scaffolds resolved, Fernet key rotated. Added §7.5 documenting Python version drift (host 3.14 vs target 3.12), sqlfluff no-op status until Phase 4, and the duplicate-job-name branch-protection bug caught pre-merge. |
+| 1.2 | 2026-07-07 | Pre-Phase-1 audit + hygiene PR. Rewrote six stale scaffold-era READMEs that still described the banned pre-correction design; deleted four surviving empty tracked files; fixed invalid pyproject build-backend. Recorded new open question (OPENAQ_API_KEY 401) and §7.5 discoveries (docs are design surface; docker-compose keys-mount gap; O3 seed labeling debt). G2 empirically confirmed: flat /v3/measurements returns 404. |
