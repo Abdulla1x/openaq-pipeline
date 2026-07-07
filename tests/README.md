@@ -1,19 +1,24 @@
 # tests/
 
-Pytest test suite for the Python ingestion layer.
+Pytest test suite.
 
-## Contents
+## Contents (current)
 
 ```
 tests/
-├── conftest.py       Shared fixtures (mock GCS client, sample API responses)
-├── unit/             Pure unit tests — no network or GCP calls
-└── integration/      End-to-end tests against real GCS/BigQuery (needs .env)
+├── unit/
+│   └── test_who_constants.py   Guards the WHO 2021 threshold values (G5)
+└── integration/                Empty until Phase 5
 ```
+
+Import paths are configured via `pythonpath = ["."]` in `pyproject.toml`
+(`[tool.pytest.ini_options]`) — no conftest.py or editable install needed.
 
 ## Running tests
 
 ```bash
-pytest tests/unit/                  # fast, no credentials needed
-pytest tests/integration/ --slow    # requires GOOGLE_APPLICATION_CREDENTIALS
+pytest tests/unit/ -v    # fast, no credentials needed (also: make test)
 ```
+
+Phase 2 adds unit tests for the OpenAQ client (mocked API, per G12); Phase 5
+adds an integration test against real GCS/BigQuery.

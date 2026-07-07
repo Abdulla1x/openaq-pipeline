@@ -1,37 +1,53 @@
 # openaq-pipeline
 
-Production-grade data engineering pipeline ingesting air quality data from the
-OpenAQ API for UAE and Pakistan.
+Batch data engineering pipeline ingesting air-quality data from the OpenAQ v3
+API, comparing the UAE and Pakistan on PM2.5 / PM10 / NO2 against WHO 2021
+thresholds. The cross-country data-quality gap is itself an intended finding.
+
+**Status:** Phase 0 (repo hygiene + CI/CD) complete. Phases 1–7 (IaC,
+ingestion, orchestration, transformation, backfill, serving, polish) not yet
+started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Ingestion | Python → OpenAQ v3 API |
-| Raw storage | GCP Cloud Storage (JSON) |
+| Ingestion | Python → OpenAQ v3 API (sensor-centric fan-out) |
+| Raw storage | GCP Cloud Storage (verbatim JSON) |
 | Warehouse | BigQuery |
 | Transformation | dbt (staging → intermediate → mart) |
-| Orchestration | Apache Airflow (Docker Compose) |
+| Orchestration | Apache Airflow 2.9 (Docker Compose, LocalExecutor) |
+| IaC | Terraform |
 | Dashboard | Looker Studio |
 
 ## Repository layout
 
 ```
 .
-├── airflow/        Airflow DAGs, plugins, and Docker config
-├── dbt/            dbt transformation project (3-layer model)
-├── ingestion/      Python OpenAQ API client and country fetchers
-├── infra/          Terraform IaC for GCS and BigQuery
-├── scripts/        Dev utility scripts (bootstrap, backfill)
-├── tests/          Python unit and integration tests
-├── docs/           Architecture diagrams and runbooks
-└── looker/         Looker Studio dashboard exports
+├── airflow/        Airflow Docker image + config; DAGs land in Phase 3
+├── dbt/            dbt project config; models/seeds land in Phase 4
+├── ingestion/      WHO threshold constants; OpenAQ v3 client lands in Phase 2
+├── infra/          Terraform IaC for GCP; lands in Phase 1
+├── scripts/        Dev utility scripts (bootstrap)
+├── tests/          Pytest suite (unit now, integration in Phase 5)
+├── docs/           PROJECT_CONTEXT.md (source of truth) + architecture overview
+└── looker/         Looker Studio exports; lands in Phase 6
 ```
 
-## Quickstart
+## Quickstart (local dev environment only)
 
 ```bash
-cp .env.example .env          # fill in your credentials
-bash scripts/bootstrap.sh     # provision GCP resources + init Airflow
-docker compose up -d          # start Airflow
+bash scripts/bootstrap.sh     # checks prerequisites, creates .env from template
+# fill in the placeholder values in .env
+make up                       # start Airflow at http://localhost:8080
+make lint && make test        # ruff + pytest
 ```
+
+GCP resources are provisioned exclusively via Terraform (`infra/`, Phase 1) —
+no script creates cloud resources.
+
+## Documentation
+
+`docs/PROJECT_CONTEXT.md` is the living source of truth: architectural
+guardrails with rationale, phase roadmap, and current state.
+`docs/architecture.md` is the short-form overview.

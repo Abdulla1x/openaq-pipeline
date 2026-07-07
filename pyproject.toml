@@ -1,12 +1,17 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "openaq-pipeline"
 version = "0.1.0"
 description = "Batch data engineering pipeline comparing UAE and Pakistan air quality against WHO 2021 thresholds"
 requires-python = ">=3.12"
+
+# Flat layout with non-package dirs (dbt/, airflow/, infra/, ...) breaks
+# setuptools auto-discovery — declare the only Python package explicitly.
+[tool.setuptools.packages.find]
+include = ["ingestion*"]
 
 [tool.ruff]
 line-length = 100

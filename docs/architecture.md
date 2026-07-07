@@ -51,4 +51,4 @@ with rationale. The most consequential:
 ## Full documentation
 
 The living source of truth for this project — phase roadmap, full guardrail
-rationale, and current state — is `PROJECT_CONTEXT.md` in the repo root.
+rationale, and current state — is `docs/PROJECT_CONTEXT.md`.

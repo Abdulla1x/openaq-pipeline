@@ -1,20 +1,23 @@
 # airflow/
 
-Airflow DAGs, custom operators, and Docker configuration for pipeline orchestration.
+Airflow Docker configuration for pipeline orchestration. DAGs and operators
+land in Phase 3.
 
-## Contents
+## Contents (current)
 
 ```
 airflow/
-├── dags/
-│   ├── openaq_ingest_dag.py          Fetches raw JSON from OpenAQ API → GCS
-│   └── dbt_transform_dag.py          Runs dbt models after each ingest cycle
-├── plugins/
-│   └── operators/
-│       └── openaq_to_gcs_operator.py Custom operator wrapping the ingestion client
-├── config/
-│   └── airflow.cfg                   Airflow configuration overrides
-├── logs/                             Runtime logs — gitignored, mounted as Docker volume
-├── Dockerfile                        Custom Airflow image with project dependencies
-└── requirements.txt                  Python packages baked into the Airflow image
+├── dags/               Empty until Phase 3
+├── plugins/operators/  Empty until Phase 3
+├── Dockerfile          Custom Airflow 2.9.1 image with project dependencies
+└── requirements.txt    Python packages baked into the Airflow image
 ```
+
+Runtime logs are written to the repo-root `logs/` directory (gitignored,
+mounted as a Docker volume by `docker-compose.yml`).
+
+## Planned (Phase 3)
+
+An ingest DAG using **dynamic task mapping** over the sensor list (G3), loading
+raw JSON to BigQuery with WRITE_APPEND (G4), and emitting an Airflow Dataset; a
+transform DAG scheduled on that Dataset runs dbt via astronomer-cosmos (G9).
