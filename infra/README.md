@@ -1,23 +1,61 @@
 # infra/
 
-Terraform infrastructure-as-code for all GCP resources.
+Terraform for all GCP resources (guardrail G11). One environment, one state.
 
 ## Contents
 
 ```
 infra/
-├── main.tf         Provider config and backend (GCS remote state)
-├── variables.tf    Input variables (project ID, region, bucket names)
-├── outputs.tf      Exported values referenced by other modules
-├── gcs.tf          Cloud Storage buckets: raw JSON landing zone + processed
-└── bigquery.tf     BigQuery datasets and table schemas
+├── main.tf                   Provider requirements + GCS remote-state backend
+├── variables.tf              project_id, region (+ derived bucket name)
+├── apis.tf                   Enables storage / bigquery / iam APIs
+├── gcs.tf                    Raw JSON landing bucket (versioned, no public access)
+├── bigquery.tf               Datasets: openaq_raw, openaq_dbt (no tables — see below)
+├── iam.tf                    Pipeline service account + least-privilege grants
+├── outputs.tf                Bucket name, dataset IDs, SA email
+├── terraform.tfvars.example  Committed template; real terraform.tfvars is gitignored
+└── .terraform.lock.hcl       Committed — pins exact provider versions
 ```
+
+Tables are deliberately not managed here: the raw schema is asserted until real
+data lands (Phase 2/3), and dbt owns its own relations.
+
+## One-time bootstrap (before first `terraform init`)
+
+The bucket holding the remote tfstate cannot be created by the state it stores.
+Create it once, manually:
+
+```bash
+gcloud storage buckets create gs://<PROJECT_ID>-tfstate \
+  --location=us-central1 --uniform-bucket-level-access
+gcloud storage buckets update gs://<PROJECT_ID>-tfstate --versioning
+```
+
+Then put the real bucket name in the `backend "gcs"` block in `main.tf`
+(backend blocks cannot read variables).
 
 ## Usage
 
 ```bash
 cd infra
+cp terraform.tfvars.example terraform.tfvars   # fill in project_id
 terraform init
-terraform plan -var-file=terraform.tfvars
-terraform apply -var-file=terraform.tfvars
+terraform plan
+terraform apply
 ```
+
+A second `terraform apply` must report "No changes" (Phase 1 exit criterion).
+
+## Service-account key
+
+The SA key is created with gcloud, **not** Terraform — a
+`google_service_account_key` resource would store the private key in plaintext
+inside the tfstate (violates G10's secret-handling intent):
+
+```bash
+gcloud iam service-accounts keys create ~/gcp-keys/openaq-pipeline-key.json \
+  --iam-account=openaq-pipeline@<PROJECT_ID>.iam.gserviceaccount.com
+```
+
+Keep the key outside the repo (all `*-key.json` patterns are gitignored
+regardless). Wiring it into docker-compose is a Phase 2/3 decision.
