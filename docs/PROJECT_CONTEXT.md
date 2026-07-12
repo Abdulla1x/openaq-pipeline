@@ -227,8 +227,8 @@ Done:
 
 ## 8. Genuinely open questions
 
-- **OpenAQ v3 free-tier rate limits** — unknown exact limits; the per-sensor fan-out makes this load-bearing for both daily runs and backfill. Confirm and implement backoff before Phase 5.
-- **The `OPENAQ_API_KEY` in `.env` is invalid** — probes of `/v3/countries` returned HTTP 401 on 2026-07-07 and again on 2026-07-12. **Hard blocker for Phase 2**: regenerate at explore.openaq.org before ingestion work starts. When the new key is verified, capture the `x-ratelimit-*` response headers to close the rate-limit open question below. (The 2026-07-07 probe also confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
+- **OpenAQ v3 free-tier rate limits — partially answered 2026-07-12:** response headers on a live call show `x-ratelimit-limit: 60` with `x-ratelimit-reset: 60`, i.e. **60 requests/minute**. The per-sensor fan-out makes this load-bearing: the Phase 2 client must throttle/backoff off these headers, and backfill (Phase 5) must budget for it. Whether an additional daily cap exists is still unconfirmed — watch for it during the first real ingestion runs.
+- ~~**The `OPENAQ_API_KEY` in `.env` is invalid**~~ **RESOLVED 2026-07-12:** the old key 401'd on probes of `/v3/countries` (2026-07-07 and 2026-07-12); regenerated at explore.openaq.org and verified live — HTTP 200, rate-limit headers captured (see above). No longer a Phase 2 blocker. (The 2026-07-07 probe also confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
 - **Backfill volume** — hundreds of sensors × 1–2 years × pagination = heavy. Chunk by date window and/or sensor batch.
 - **Verified vs asserted schema** — `raw_measurements` and the parsed staging columns are `[ASSERTED]` until Phase 2/3 land real data.
 
