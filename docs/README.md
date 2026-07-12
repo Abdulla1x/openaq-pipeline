@@ -1,11 +1,13 @@
 # docs/
 
-Project documentation: architecture, data dictionary, and operational runbooks.
+Project documentation.
 
 ## Contents
 
 ```
 docs/
-└── architecture.md   End-to-end data flow diagram, component decisions, and
-                      GCP resource map
+├── PROJECT_CONTEXT.md   Living source of truth: guardrails with rationale,
+│                        phase roadmap, current state, changelog
+└── architecture.md      Short-form overview: data flow diagram and the most
+                         consequential design decisions
 ```
