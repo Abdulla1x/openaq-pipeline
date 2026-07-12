@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.3 · **Last updated:** 2026-07-12 · **Current phase:** Phase 2 (not started)
+> **Version:** 1.4 · **Last updated:** 2026-07-12 · **Current phase:** Phase 2 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
 
 ---
@@ -174,7 +174,7 @@ Done:
 - [x] No empty scaffold files
 - [x] Fernet key rotated
 
-**Phase 1 — complete (2026-07-12, `feat/phase-1-terraform`).**
+**Phase 1 — complete (merged to main as PR #4, commit a9376a5, 2026-07-12).**
 
 Done:
 - GCP project `openaq-pipeline` (billing linked; free trial started ~2026-07-12, $300/90 days — always-free tier persists after). Region **us-central1**: US regions qualify for the GCS always-free tier and latency is irrelevant for a batch pipeline.
@@ -183,7 +183,7 @@ Done:
 - **No tables in Terraform** — `raw_measurements` is still `[ASSERTED]` and dbt owns its own relations; IaC pinning a guessed schema would couple infrastructure to it.
 - SA key at `~/gcp-keys/openaq-pipeline-key.json`, created via `gcloud iam service-accounts keys create`, **not** a `google_service_account_key` resource (TF-managed keys store the private key in plaintext in tfstate — G10). Local `.env` GCP values now real; docker-compose key wiring still deferred to Phase 2/3.
 - `.terraform.lock.hcl` un-gitignored and committed (pins provider versions; ignoring it was an anti-pattern in the Phase 0 `.gitignore`).
-- CI: fourth job `terraform` (`fmt -check` → `init -backend=false` → `validate`; needs no GCP credentials). **Must be added to the branch-protection required checks in the GitHub UI.**
+- CI: fourth job `terraform` (`fmt -check` → `init -backend=false` → `validate`; needs no GCP credentials). Added to the branch-protection required checks — all four (`lint`/`dbt-parse`/`pytest`/`terraform`) confirmed required via the GitHub rules API on 2026-07-12.
 
 **Phase 1 exit criteria — verified:**
 - [x] Second `terraform apply` → "No changes. Your infrastructure matches the configuration."
@@ -200,9 +200,16 @@ Done:
 - Fixed invalid `build-backend` in `pyproject.toml` (`setuptools.backends.legacy:build` → `setuptools.build_meta`); the bad value would have broken any future `pip install -e .`.
 - Verified externally: CI runs green on main, branch-protection ruleset active with the three required checks (via GitHub API); `openaq_architecture_spec.md` exists nowhere in the tree or git history; `.env` was never tracked.
 
+**Pre-Phase-2 audit (2026-07-12, `chore/pre-phase-2-hygiene`).** A full audit (repo, GitHub state, live GCP, docs) before starting Phase 2:
+- Verified good: all 4 CI jobs green on PR #4 and main; branch-protection ruleset requires all four checks; live GCP matches Terraform (tfstate object present, bucket + both datasets exist in us-central1); commit history clean (conventional commits, no stray trailers); no guardrail regressions; no secrets tracked.
+- Fixed two latent dbt config bugs that would have failed in Phase 4: `profiles.yml` had `location: US` while the datasets live in **us-central1** (BQ jobs must run in the dataset's location), and `dbt_project.yml` set `+schema: dbt`, which dbt's default schema-name generation appends to the profile dataset — models would have targeted a nonexistent `openaq_dbt_dbt` dataset the least-privilege SA cannot create.
+- Fixed stale root README (still claimed "Phases 1–7 not started" after Phase 1 merged) and `docs/README.md` (promised a data dictionary and runbooks that don't exist; omitted PROJECT_CONTEXT.md from its own contents).
+- Resolved the Python drift (see §7.5): `.venv` rebuilt on CPython 3.12.13 via a userland `uv` install; ruff + pytest green on 3.12.
+- Re-probed the OpenAQ API key: **still 401** (see §8) — must be regenerated before Phase 2 work starts.
+
 ## 7.5 Deviations and discoveries (for institutional memory)
 
-- **Local Python version drift.** Host `python3` resolves to 3.14.4 (confirmed via `.venv` creation), while `pyproject.toml`'s `requires-python`, the Airflow Docker image, and this document's §2 stack table all target 3.12. Not yet a problem (Phase 0 code has no version-specific behavior), but will need resolving before Phase 2 ingestion code is written — either pin a 3.12 venv explicitly or confirm 3.14 compatibility for all Phase 2+ dependencies (especially `apache-airflow-providers-google`, which has historically had narrow pandas/Python version constraints — see the pandas conflict in the original build).
+- **Local Python version drift — RESOLVED 2026-07-12.** Host `python3` resolves to 3.14.4, while `pyproject.toml`'s `requires-python`, the Airflow Docker image, and this document's §2 stack table all target 3.12. Resolved in the pre-Phase-2 hygiene pass: `uv` installed userland (no sudo needed; `~/.local/bin/uv`), `.venv` rebuilt on a uv-managed standalone CPython **3.12.13**, dev deps reinstalled, lint + tests green. Local dev now matches CI and the Airflow image.
 - **`sqlfluff` is currently a no-op.** `continue-on-error: true` on the SQLFluff CI step was added defensively, but empirically (tested locally) SQLFluff exits 0 on an empty `dbt/models/` directory regardless. The flag has zero effect today. It becomes load-bearing in Phase 4 when real `.sql` files land — at that point, decide explicitly whether lint failures should block merges (remove the flag) or only warn (keep it, but make that a deliberate choice, not inherited inertia).
 - **GitHub Rulesets, not Classic branch protection.** Used the newer Rulesets UI instead of Classic. Functionally equivalent for our needs (require PR, require status checks, block force push) but the setup flow is non-obvious — a new ruleset defaults to Enforcement: Disabled and no target branch, both of which must be explicitly set or the rule silently does nothing while looking configured.
 - **Required-check names matter for branch protection.** Two CI jobs were initially both named `test` (intended to simplify required-checks down to one name); this was a real bug, not a style choice — GitHub's Checks API keys on the job's `name:` field, and whichever job reports last silently overwrites the other's status, making branch protection non-deterministic. Caught before merge; fixed to `lint`/`dbt-parse`/`pytest`.
@@ -213,13 +220,15 @@ Done:
 - **(Phase 1) Two separate gcloud logins.** `gcloud auth login` (CLI identity) and `gcloud auth application-default login` (ADC) are distinct; Terraform authenticates via **ADC** only. Forgetting the second yields provider auth errors despite a "logged in" gcloud.
 - **(Phase 1) Backend blocks cannot interpolate variables** — the tfstate bucket name is a literal in `main.tf`, not `var.project_id`. Known Terraform limitation; acceptable for a single-env project (multi-env would use partial backend config via `-backend-config`).
 - **(Phase 1) The GCP project pre-existed.** Planning assumed a from-scratch account, but `openaq-pipeline` (billing linked) already existed alongside unrelated projects — worth checking `gcloud projects list` before scripting account setup steps.
+- **(2026-07-12 audit) dbt job location must equal the dataset's region, exactly.** `location: US` (multi-region) in `profiles.yml` is not a superset that covers `us-central1` datasets — BigQuery jobs run in one location and fail with "dataset not found" on mismatch. Any future region change in Terraform must be mirrored in `profiles.yml`.
+- **(2026-07-12 audit) dbt `+schema:` is a suffix, not a target.** With the default `generate_schema_name` macro, `+schema: dbt` on top of a profile `dataset: openaq_dbt` yields `openaq_dbt_dbt`. The least-privilege SA (dataset-scoped `dataEditor`, no dataset-create permission) would have turned this into a hard permission failure in Phase 4 — removed the overrides; the profile's dataset is the single source of the target.
 
 ---
 
 ## 8. Genuinely open questions
 
-- **OpenAQ v3 free-tier rate limits** — unknown exact limits; the per-sensor fan-out makes this load-bearing for both daily runs and backfill. Confirm and implement backoff before Phase 5.
-- **The `OPENAQ_API_KEY` in `.env` may be invalid** — a 2026-07-07 probe of `/v3/countries` with it returned HTTP 401. Verify or regenerate at explore.openaq.org before Phase 2, where it becomes load-bearing. (Same probe confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
+- **OpenAQ v3 free-tier rate limits — partially answered 2026-07-12:** response headers on a live call show `x-ratelimit-limit: 60` with `x-ratelimit-reset: 60`, i.e. **60 requests/minute**. The per-sensor fan-out makes this load-bearing: the Phase 2 client must throttle/backoff off these headers, and backfill (Phase 5) must budget for it. Whether an additional daily cap exists is still unconfirmed — watch for it during the first real ingestion runs.
+- ~~**The `OPENAQ_API_KEY` in `.env` is invalid**~~ **RESOLVED 2026-07-12:** the old key 401'd on probes of `/v3/countries` (2026-07-07 and 2026-07-12); regenerated at explore.openaq.org and verified live — HTTP 200, rate-limit headers captured (see above). No longer a Phase 2 blocker. (The 2026-07-07 probe also confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
 - **Backfill volume** — hundreds of sensors × 1–2 years × pagination = heavy. Chunk by date window and/or sensor batch.
 - **Verified vs asserted schema** — `raw_measurements` and the parsed staging columns are `[ASSERTED]` until Phase 2/3 land real data.
 
@@ -249,3 +258,4 @@ Done:
 | 1.1 | 2026-06-30 | Phase 0 complete (merged main as 700fe1a). CI green, branch protection active, all scaffolds resolved, Fernet key rotated. Added §7.5 documenting Python version drift (host 3.14 vs target 3.12), sqlfluff no-op status until Phase 4, and the duplicate-job-name branch-protection bug caught pre-merge. |
 | 1.2 | 2026-07-07 | Pre-Phase-1 audit + hygiene PR. Rewrote six stale scaffold-era READMEs that still described the banned pre-correction design; deleted four surviving empty tracked files; fixed invalid pyproject build-backend. Recorded new open question (OPENAQ_API_KEY 401) and §7.5 discoveries (docs are design surface; docker-compose keys-mount gap; O3 seed labeling debt). G2 empirically confirmed: flat /v3/measurements returns 404. |
 | 1.3 | 2026-07-12 | Phase 1 complete (`feat/phase-1-terraform`). All GCP via Terraform (G11): raw bucket, two datasets, least-privilege SA, remote tfstate in GCS; all three exit criteria verified (idempotent apply, SA smoke test, remote state). Lock file now committed; `terraform` CI job added. §7.5 additions: userland CLI installs (no sudo), ADC vs CLI auth split, backend-block variable limitation, pre-existing GCP project. |
+| 1.4 | 2026-07-12 | Pre-Phase-2 audit + hygiene PR (Phase 1 merged as PR #4). Fixed two latent dbt config bugs (profiles `location: US` vs us-central1 datasets; `+schema: dbt` → `openaq_dbt_dbt` doubling); refreshed stale root and docs READMEs; recorded `terraform` as a verified required check. Python drift resolved: `.venv` rebuilt on uv-managed CPython 3.12.13. OpenAQ key re-probed: still 401 — hard Phase 2 blocker until regenerated. |

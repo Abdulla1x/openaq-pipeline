@@ -4,9 +4,10 @@ Batch data engineering pipeline ingesting air-quality data from the OpenAQ v3
 API, comparing the UAE and Pakistan on PM2.5 / PM10 / NO2 against WHO 2021
 thresholds. The cross-country data-quality gap is itself an intended finding.
 
-**Status:** Phase 0 (repo hygiene + CI/CD) complete. Phases 1–7 (IaC,
-ingestion, orchestration, transformation, backfill, serving, polish) not yet
-started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
+**Status:** Phase 0 (repo hygiene + CI/CD) and Phase 1 (GCP infrastructure via
+Terraform) complete. Phase 2 (ingestion) is next; Phases 3–7 (orchestration,
+transformation, backfill, serving, polish) not yet started — see
+`docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
 
 ## Stack
 
@@ -27,7 +28,7 @@ started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
 ├── airflow/        Airflow Docker image + config; DAGs land in Phase 3
 ├── dbt/            dbt project config; models/seeds land in Phase 4
 ├── ingestion/      WHO threshold constants; OpenAQ v3 client lands in Phase 2
-├── infra/          Terraform IaC for GCP; lands in Phase 1
+├── infra/          Terraform IaC for GCP (bucket, datasets, service account)
 ├── scripts/        Dev utility scripts (bootstrap)
 ├── tests/          Pytest suite (unit now, integration in Phase 5)
 ├── docs/           PROJECT_CONTEXT.md (source of truth) + architecture overview
@@ -43,8 +44,8 @@ make up                       # start Airflow at http://localhost:8080
 make lint && make test        # ruff + pytest
 ```
 
-GCP resources are provisioned exclusively via Terraform (`infra/`, Phase 1) —
-no script creates cloud resources.
+GCP resources are provisioned exclusively via Terraform (`infra/`) — no
+script creates cloud resources.
 
 ## Documentation
 
