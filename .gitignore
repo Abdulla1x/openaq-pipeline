@@ -35,8 +35,9 @@ credentials.json
 gcp_keyfile.json
 
 # ── Terraform ─────────────────────────────────────────────────────────────────
+# .terraform.lock.hcl is deliberately NOT ignored: committing it pins provider
+# versions so every machine and CI run resolves identical providers.
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfplan
