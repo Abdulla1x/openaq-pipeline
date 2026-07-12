@@ -15,7 +15,7 @@ terraform {
   }
 
   backend "gcs" {
-    bucket = "REPLACE_WITH_PROJECT_ID-tfstate" # set after the GCP project exists
+    bucket = "openaq-pipeline-tfstate"
     prefix = "terraform/state"
   }
 }
