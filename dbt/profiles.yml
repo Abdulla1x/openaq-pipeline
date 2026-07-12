@@ -9,4 +9,4 @@ openaq:
       keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
       timeout_seconds: 300
-      location: US
+      location: us-central1

@@ -15,14 +15,15 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+# No +schema overrides: the target dataset (openaq_dbt) comes from the
+# profile; dbt's default schema-name generation would append a custom schema
+# to it (openaq_dbt_dbt), a dataset that doesn't exist and that the
+# least-privilege SA has no permission to create.
 models:
   openaq:
     staging:
       +materialized: view
-      +schema: dbt
     intermediate:
       +materialized: table
-      +schema: dbt
     mart:
       +materialized: table
-      +schema: dbt
