@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.2 · **Last updated:** 2026-07-07 · **Current phase:** Phase 1 (not started)
+> **Version:** 1.3 · **Last updated:** 2026-07-12 · **Current phase:** Phase 2 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
 
 ---
@@ -42,7 +42,7 @@ Rules for whoever (human or model) edits this file:
 | Warehouse | GCP BigQuery | free tier (10GB storage / 1TB query) |
 | Transformation | dbt-core + dbt-bigquery | 1.8.3 / 1.8.2 |
 | Serving | Looker Studio | native BigQuery connector |
-| IaC | Terraform | all GCP resources; remote tfstate in GCS |
+| IaC | Terraform | 1.15.8, google provider ~> 7.0; remote tfstate in GCS |
 | Source API | OpenAQ | **v3** (sensor-centric — see §4) |
 | Language | Python | 3.12 |
 | CI/CD | GitHub Actions | ruff + sqlfluff + `dbt parse` + pytest on PRs |
@@ -174,7 +174,23 @@ Done:
 - [x] No empty scaffold files
 - [x] Fernet key rotated
 
-**Not started:** everything in §6 Phases 1–7. No ingestion, DAG, dbt models, GCP resources, or dashboard exist yet.
+**Phase 1 — complete (2026-07-12, `feat/phase-1-terraform`).**
+
+Done:
+- GCP project `openaq-pipeline` (billing linked; free trial started ~2026-07-12, $300/90 days — always-free tier persists after). Region **us-central1**: US regions qualify for the GCS always-free tier and latency is irrelevant for a batch pipeline.
+- `infra/` Terraform, 11 resources: API enablement (storage/bigquery/iam, `disable_on_destroy = false`), raw bucket `openaq-pipeline-openaq-raw` (versioned per G1 immutable-raw, uniform bucket-level access, public access prevention enforced, `force_destroy = false`), datasets `openaq_raw` + `openaq_dbt` in us-central1 (colocated with the bucket so GCS→BQ load jobs need no cross-region copy), SA `openaq-pipeline@…` with least-privilege grants — `storage.objectAdmin` on the bucket only, `bigquery.dataEditor` on the two datasets only, `bigquery.jobUser` at project level (BQ jobs are project-scoped; can't be narrower).
+- Remote tfstate in `gs://openaq-pipeline-tfstate` (versioned), bootstrapped manually via gcloud — the backend bucket cannot be provisioned by the state it stores. Documented in `infra/README.md`.
+- **No tables in Terraform** — `raw_measurements` is still `[ASSERTED]` and dbt owns its own relations; IaC pinning a guessed schema would couple infrastructure to it.
+- SA key at `~/gcp-keys/openaq-pipeline-key.json`, created via `gcloud iam service-accounts keys create`, **not** a `google_service_account_key` resource (TF-managed keys store the private key in plaintext in tfstate — G10). Local `.env` GCP values now real; docker-compose key wiring still deferred to Phase 2/3.
+- `.terraform.lock.hcl` un-gitignored and committed (pins provider versions; ignoring it was an anti-pattern in the Phase 0 `.gitignore`).
+- CI: fourth job `terraform` (`fmt -check` → `init -backend=false` → `validate`; needs no GCP credentials). **Must be added to the branch-protection required checks in the GitHub UI.**
+
+**Phase 1 exit criteria — verified:**
+- [x] Second `terraform apply` → "No changes. Your infrastructure matches the configuration."
+- [x] SA smoke test using its own key in an isolated `CLOUDSDK_CONFIG`: wrote an object to the raw bucket, created `openaq_raw.smoke_test` via `bq mk`, then cleaned both up (verified empty after).
+- [x] tfstate object present in the GCS backend (`terraform/state/default.tfstate`).
+
+**Not started:** §6 Phases 2–7. No ingestion code, DAG, dbt models, or dashboard exist yet.
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded; the forked `CourseScraping-BU` repo (remove/rebuild if referenced) — not addressed in Phase 0, still open.
 
@@ -184,7 +200,7 @@ Done:
 - Fixed invalid `build-backend` in `pyproject.toml` (`setuptools.backends.legacy:build` → `setuptools.build_meta`); the bad value would have broken any future `pip install -e .`.
 - Verified externally: CI runs green on main, branch-protection ruleset active with the three required checks (via GitHub API); `openaq_architecture_spec.md` exists nowhere in the tree or git history; `.env` was never tracked.
 
-## 7.5 Deviations and discoveries during Phase 0 (for institutional memory)
+## 7.5 Deviations and discoveries (for institutional memory)
 
 - **Local Python version drift.** Host `python3` resolves to 3.14.4 (confirmed via `.venv` creation), while `pyproject.toml`'s `requires-python`, the Airflow Docker image, and this document's §2 stack table all target 3.12. Not yet a problem (Phase 0 code has no version-specific behavior), but will need resolving before Phase 2 ingestion code is written — either pin a 3.12 venv explicitly or confirm 3.14 compatibility for all Phase 2+ dependencies (especially `apache-airflow-providers-google`, which has historically had narrow pandas/Python version constraints — see the pandas conflict in the original build).
 - **`sqlfluff` is currently a no-op.** `continue-on-error: true` on the SQLFluff CI step was added defensively, but empirically (tested locally) SQLFluff exits 0 on an empty `dbt/models/` directory regardless. The flag has zero effect today. It becomes load-bearing in Phase 4 when real `.sql` files land — at that point, decide explicitly whether lint failures should block merges (remove the flag) or only warn (keep it, but make that a deliberate choice, not inherited inertia).
@@ -193,6 +209,10 @@ Done:
 - **(2026-07-07 audit) Scaffold READMEs are part of the design surface.** The Phase 0 cleanup deleted anti-pattern code but left six READMEs describing that code as present — a future session scaffolding from them would have rebuilt the banned design. Lesson: when a guardrail kills a pattern, grep the *docs* for it too.
 - **(2026-07-07 audit) `docker-compose.yml` defaults `GOOGLE_APPLICATION_CREDENTIALS` to `/opt/airflow/keys/service-account.json`, but no `./keys` volume is mounted.** Deliberately deferred to Phase 2/3 when GCP auth becomes real — decide then between mounting a keys dir or another delivery mechanism.
 - **(2026-07-07 audit) O3 threshold labeling debt in `ingestion/constants.py`.** The dict stores O3's 8-hour value under the `"24h"` key and peak-season under `"annual"` (commented, tested). Acceptable shorthand for a two-key dict; the Phase 4 `who_thresholds` seed has an explicit `averaging_period` column and must record `8h` / `peak_season` correctly, not inherit the shorthand.
+- **(Phase 1) No sudo in the WSL session** → CLIs installed userland: terraform as a single binary in `~/.local/bin`, Google Cloud SDK via tarball in `~/google-cloud-sdk` with `gcloud`/`gsutil`/`bq` symlinked into `~/.local/bin` (no `.bashrc` edits). `unzip` was also missing (used Python's `zipfile`). If sudo becomes available, apt-based installs would give managed updates.
+- **(Phase 1) Two separate gcloud logins.** `gcloud auth login` (CLI identity) and `gcloud auth application-default login` (ADC) are distinct; Terraform authenticates via **ADC** only. Forgetting the second yields provider auth errors despite a "logged in" gcloud.
+- **(Phase 1) Backend blocks cannot interpolate variables** — the tfstate bucket name is a literal in `main.tf`, not `var.project_id`. Known Terraform limitation; acceptable for a single-env project (multi-env would use partial backend config via `-backend-config`).
+- **(Phase 1) The GCP project pre-existed.** Planning assumed a from-scratch account, but `openaq-pipeline` (billing linked) already existed alongside unrelated projects — worth checking `gcloud projects list` before scripting account setup steps.
 
 ---
 
@@ -228,3 +248,4 @@ Done:
 | 1.0 | 2026-06-18 | Initial context doc. Captures architectural review corrections (G1–G12), phase roadmap, and career framing. |
 | 1.1 | 2026-06-30 | Phase 0 complete (merged main as 700fe1a). CI green, branch protection active, all scaffolds resolved, Fernet key rotated. Added §7.5 documenting Python version drift (host 3.14 vs target 3.12), sqlfluff no-op status until Phase 4, and the duplicate-job-name branch-protection bug caught pre-merge. |
 | 1.2 | 2026-07-07 | Pre-Phase-1 audit + hygiene PR. Rewrote six stale scaffold-era READMEs that still described the banned pre-correction design; deleted four surviving empty tracked files; fixed invalid pyproject build-backend. Recorded new open question (OPENAQ_API_KEY 401) and §7.5 discoveries (docs are design surface; docker-compose keys-mount gap; O3 seed labeling debt). G2 empirically confirmed: flat /v3/measurements returns 404. |
+| 1.3 | 2026-07-12 | Phase 1 complete (`feat/phase-1-terraform`). All GCP via Terraform (G11): raw bucket, two datasets, least-privilege SA, remote tfstate in GCS; all three exit criteria verified (idempotent apply, SA smoke test, remote state). Lock file now committed; `terraform` CI job added. §7.5 additions: userland CLI installs (no sudo), ADC vs CLI auth split, backend-block variable limitation, pre-existing GCP project. |
