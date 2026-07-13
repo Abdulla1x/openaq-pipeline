@@ -7,6 +7,12 @@ name = "openaq-pipeline"
 version = "0.1.0"
 description = "Batch data engineering pipeline comparing UAE and Pakistan air quality against WHO 2021 thresholds"
 requires-python = ">=3.12"
+# Pins match airflow/requirements.txt — Phase 3 runs this package inside the
+# Airflow image, so local/CI versions must agree with it.
+dependencies = [
+    "requests==2.31.0",
+    "google-cloud-storage==2.16.0",
+]
 
 # Flat layout with non-package dirs (dbt/, airflow/, infra/, ...) breaks
 # setuptools auto-discovery — declare the only Python package explicitly.
