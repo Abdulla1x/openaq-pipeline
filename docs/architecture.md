@@ -29,8 +29,8 @@ Looker Studio — UAE vs PK trends, exceedance rates, coverage panel
 The dataset is a few hundred MB over multiple years — a single Postgres instance
 would technically suffice. Airflow + GCS + BigQuery + dbt + Looker is deliberate
 over-engineering: the project exists to demonstrate production data-engineering
-patterns at small scale for internship/new-grad recruiting, not to solve a scale
-problem that doesn't exist. See PROJECT_CONTEXT.md §1 for the full framing.
+patterns at small scale as a portfolio exercise, not to solve a scale problem
+that doesn't exist. See PROJECT_CONTEXT.md §1 for the full framing.
 
 ## Key design decisions
 

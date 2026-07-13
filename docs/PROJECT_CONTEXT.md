@@ -1,20 +1,17 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.5 · **Last updated:** 2026-07-13 · **Current phase:** Phase 3 (not started)
-> **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
+> **Version:** 1.6 · **Last updated:** 2026-07-14 · **Current phase:** Phase 3 (not started)
+> **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo.
 
 ---
 
 ## 0. How to use this document
 
-This file initializes every phased work session — a design/planning pass, followed by an implementation pass. Read it first, then work only on the **current phase** named above.
-
-Rules for whoever (human or model) edits this file:
-- **It is a living doc.** At the end of each phase, update the relevant sections, bump the version, and add a changelog entry (Section 11). Do not let it drift from reality — a stale context file is worse than none.
+Maintenance rules for this file:
+- **It is a living doc.** At the end of each phase, update the relevant sections, bump the version, and add a changelog entry (Section 10). Do not let it drift from reality — a stale context file is worse than none.
 - **Decisions carry rationale.** When a guardrail changes, record *why*, not just the new state (Section 4). The "why" is the point; the project is a learning exercise as much as a deliverable.
 - **Schema marked `[ASSERTED]` is a guess** until real data confirms it. Any phase downstream of ingestion must inspect the actual BigQuery table, not trust this file's asserted schema.
-- **One source of truth.** This file lives in the repo so it's read natively during implementation sessions; it is mirrored as a reference copy so design sessions see it without pasting. Edit the repo copy; re-sync the mirror when it changes.
 
 ---
 
@@ -22,12 +19,9 @@ Rules for whoever (human or model) edits this file:
 
 **What:** A batch data engineering pipeline ingesting air-quality data from the OpenAQ v3 API, comparing the UAE and Pakistan on PM2.5 / PM10 / NO2 and their WHO-threshold exceedance rates. The cross-country data-quality gap (UAE = sparse-but-instrumented; Pakistan = growing-but-inconsistent coverage) is itself an intended analytical finding.
 
-**Why it exists (career framing — be honest in every session):**
-- Built by a 3rd-year CS student (GPA 3.97, Canadian University Dubai, grad ~Dec 2026) for **data-engineering / data-science internship and new-grad recruiting**.
-- Honest ceiling: a portfolio project does **not** qualify anyone for mid-to-senior DE roles — those gate on years of production ownership. This project's realistic payoff is making the author a **standout intern / new-grad candidate** who can demonstrate production *patterns* and explain where they'd break.
-- The flagship artifact filling the author's audited resume gaps: no cloud, no orchestration, no distributed/ELT tooling, shallow GitHub.
+**Why it exists:** a portfolio/learning project built to demonstrate production data-engineering patterns end-to-end — cloud IaC, orchestration, ELT, testing, CI/CD — at deliberately small scale, and to explain where each pattern would break at real scale.
 
-**Deliberate-over-engineering stance (state this in interviews and the README):** the total dataset is a few hundred MB over years. Airflow + GCS + BigQuery + dbt + Looker is overkill on the merits — a single Postgres instance would suffice. The stack is chosen to *demonstrate the production pattern at small scale*. Owning this reads as senior judgment; pretending it's a real production system invites scrutiny it can't survive.
+**Deliberate-over-engineering stance (owned in the README):** the total dataset is a few hundred MB over years. Airflow + GCS + BigQuery + dbt + Looker is overkill on the merits — a single Postgres instance would suffice. The stack is chosen to *demonstrate the production pattern at small scale*; that tradeoff is stated openly rather than presented as a scale requirement that doesn't exist.
 
 ---
 
@@ -107,7 +101,7 @@ Store as a seed with columns `(pollutant, averaging_period, threshold_value, uni
 
 **G9 — dbt via Cosmos; ingest→transform via Airflow Datasets.** Cosmos gives model-level tasks (granular retries/observability) instead of an opaque `dbt run` BashOperator. The ingest DAG produces a Dataset; the transform DAG is scheduled on it (not `TriggerDagRunOperator`). *Why:* Airflow 2.9 native pattern, cleaner, current.
 
-**G10 — Auth & secrets.** GCP operators use an **Airflow Connection** via `gcp_conn_id`; direct dbt/bigquery client calls may use `GOOGLE_APPLICATION_CREDENTIALS`. dbt `profiles.yml` references `{{ env_var(...) }}` (commit it — it holds no secrets). `.env`, key JSON, and `profiles.yml` with real values are gitignored. **Rotate the Fernet key that leaked into the earlier spec doc; never store live secret values in this file.**
+**G10 — Auth & secrets.** GCP operators use an **Airflow Connection** via `gcp_conn_id`; direct dbt/bigquery client calls may use `GOOGLE_APPLICATION_CREDENTIALS`. dbt `profiles.yml` references `{{ env_var(...) }}` (commit it — it holds no secrets). `.env`, key JSON, and `profiles.yml` with real values are gitignored. **Never store live secret values in this file; rotate any credential that touches an unprotected surface.**
 
 **G11 — IaC for all GCP resources.** Terraform provisions bucket, datasets, service account, IAM; remote `tfstate` in a GCS backend.
 
@@ -146,7 +140,7 @@ Phase boundaries fall on **stable interfaces**, not feature counts. One phase �
 
 | Phase | Goal | Exit criterion (testable) |
 |---|---|---|
-| **0 — Hygiene & CI/CD** | Repo reads professional; living context doc committed | PR shows CI (ruff/sqlfluff/dbt parse/pytest) green; main protected; no empty scaffold files; Fernet key rotated |
+| **0 — Hygiene & CI/CD** | Repo reads professional; living context doc committed | PR shows CI (ruff/sqlfluff/dbt parse/pytest) green; main protected; no empty scaffold files; secrets rotated |
 | **1 — Cloud IaC** | Provision all GCP via Terraform | `terraform apply` idempotent (2nd apply = no changes); SA writes to GCS + creates a BQ table; tfstate in GCS backend |
 | **2 — Ingestion** | Tested v3 client → GCS raw JSON | Unit tests green; manual run lands real raw JSON for 1 day/1 country; empty responses don't crash |
 | **3 — Orchestration** | Airflow DAG: dynamic mapping + raw load | DAG green end-to-end 1 day; BQ counts reconcile vs API; same-day rerun safe (append); Dataset emitted |
@@ -165,7 +159,7 @@ Interface contracts between phases: GCS raw layout (2→3), `raw_measurements` t
 
 Done:
 - All empty scaffold files removed (Python stubs, Terraform stubs, dbt schema stubs, per-country fetchers that violated G12). `.gitkeep` placeholders added where directories must persist empty.
-- Fernet key rotated; old leaked key no longer in `.env`.
+- Secrets hygiene pass: Airflow Fernet key rotated; `.env` holds only current values and stays gitignored.
 - `pyproject.toml` configured (ruff + pytest, `pythonpath = ["."]` for test imports without an editable install).
 - `Makefile` with `up`/`down`/`logs`/`lint`/`test` targets.
 - dbt minimal config: `dbt_project.yml`, `dbt/profiles.yml` (committed — uses `{{ env_var() }}` only, no secrets, per G10), `dbt/packages.yml` (dbt_utils).
@@ -175,13 +169,12 @@ Done:
 - `.github/workflows/ci.yml` — three jobs (`lint`, `dbt-parse`, `pytest`), all passing on PR #1.
 - This file committed to the repo for the first time at `docs/PROJECT_CONTEXT.md` (previously existed only as a personal planning document, never in version control).
 - Branch protection (GitHub Ruleset, not Classic) active on `main`: requires PR, requires `lint`+`dbt-parse`+`pytest` to pass, blocks force pushes, no bypass.
-- **Commit attribution.** Disabled automatic commit co-authorship trailers going forward; one local commit amended to remove a trailer that had already been added before push. Pre-existing pushed commits on main predate this and were never affected.
 
 **Phase 0 exit criteria — verified:**
 - [x] CI green (ruff, sqlfluff, dbt parse, pytest) — confirmed on PR #1, all 3 jobs passed
 - [x] Branch protection on main active and enforcing (confirmed: PR could not show "Ready to merge" until ruleset was properly configured with Active status + target branch + required checks)
 - [x] No empty scaffold files
-- [x] Fernet key rotated
+- [x] Secrets rotation completed
 
 **Phase 1 — complete (merged to main as PR #4, commit a9376a5, 2026-07-12).**
 
@@ -216,7 +209,7 @@ Done:
 
 **Not started:** §6 Phases 3–7. No DAG, dbt models, or dashboard exist yet.
 
-**Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded; the forked `CourseScraping-BU` repo (remove/rebuild if referenced) — not addressed in Phase 0, still open.
+**Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded.
 
 **Pre-Phase-1 hygiene pass (2026-07-07 audit).** A repo audit found that Phase 0's scaffold cleanup removed anti-pattern *code* but not the docs describing it, and that "no empty scaffold files" was not fully true. Fixed in the `chore/pre-phase-1-hygiene` PR:
 - Rewrote six stale scaffold-era READMEs (root, `ingestion/`, `dbt/`, `airflow/`, `tests/`, `scripts/`) that still described the pre-correction design as present "Contents" — including per-country fetchers (`uae.py`/`pakistan.py`, banned by G12), a `bootstrap.sh` that "provisions GCP resources" (contradicts G11; the real script only checks tools and copies `.env`), and instructions to copy a gitignored `profiles.yml` (opposite of the implemented G10 decision). READMEs now describe what exists and mark future files as "planned (Phase N)".
@@ -230,6 +223,10 @@ Done:
 - Fixed stale root README (still claimed "Phases 1–7 not started" after Phase 1 merged) and `docs/README.md` (promised a data dictionary and runbooks that don't exist; omitted PROJECT_CONTEXT.md from its own contents).
 - Resolved the Python drift (see §7.5): `.venv` rebuilt on CPython 3.12.13 via a userland `uv` install; ruff + pytest green on 3.12.
 - Re-probed the OpenAQ API key: **still 401** (see §8) — must be regenerated before Phase 2 work starts.
+
+**Pre-Phase-3 audit (2026-07-14, `chore/pre-phase-3-hygiene`).** Audit before starting Phase 3:
+- Verified good: all 4 CI checks green on main (`lint`/`dbt-parse`/`pytest`/`terraform`); branch-protection ruleset enforcing all four required checks plus PR, force-push, and deletion rules (via GitHub rules API); no credential patterns in any tracked file; live GCP matches Terraform (tfstate object present, raw bucket + both datasets in place); root README phase status current.
+- Docs restructure: scoped this file to architecture, guardrails, and phase state — session-specific working notes and project framing details moved out of the versioned doc; §0 trimmed to doc-maintenance rules. `docs/architecture.md` "Why this stack" wording aligned with §1.
 
 ## 7.5 Deviations and discoveries (for institutional memory)
 
@@ -263,16 +260,7 @@ Done:
 
 ---
 
-## 9. Working preferences
-
-- Guide step by step with the "why"; do not dump a finished codebase.
-- Brutally honest; surface tradeoffs; state assumptions; push back when warranted; no sycophancy or filler.
-- Implementation sessions = scaffolding/writing/debugging in the terminal. Design sessions = planning/architecture/learning.
-- Prefer editing over rewriting whole files. Keep solutions simple and direct.
-
----
-
-## 10. Source-of-truth facts (verified)
+## 9. Source-of-truth facts (verified)
 
 - WHO thresholds in §4/G5 are the **2021** Global Air Quality Guidelines (verified 2026-06-18).
 - OpenAQ **v3** is sensor-centric per §4/G2 (verified against OpenAQ docs 2026-06-18): `countries → locations → sensors → measurements`, country filtered by `countries_id`.
@@ -281,13 +269,14 @@ Done:
 
 ---
 
-## 11. Changelog
+## 10. Changelog
 
 | Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-06-18 | Initial context doc. Captures architectural review corrections (G1–G12), phase roadmap, and career framing. |
+| 1.0 | 2026-06-18 | Initial context doc. Captures architectural review corrections (G1–G12), phase roadmap, and project framing. |
 | 1.1 | 2026-06-30 | Phase 0 complete (merged main as 700fe1a). CI green, branch protection active, all scaffolds resolved, Fernet key rotated. Added §7.5 documenting Python version drift (host 3.14 vs target 3.12), sqlfluff no-op status until Phase 4, and the duplicate-job-name branch-protection bug caught pre-merge. |
 | 1.2 | 2026-07-07 | Pre-Phase-1 audit + hygiene PR. Rewrote six stale scaffold-era READMEs that still described the banned pre-correction design; deleted four surviving empty tracked files; fixed invalid pyproject build-backend. Recorded new open question (OPENAQ_API_KEY 401) and §7.5 discoveries (docs are design surface; docker-compose keys-mount gap; O3 seed labeling debt). G2 empirically confirmed: flat /v3/measurements returns 404. |
 | 1.3 | 2026-07-12 | Phase 1 complete (`feat/phase-1-terraform`). All GCP via Terraform (G11): raw bucket, two datasets, least-privilege SA, remote tfstate in GCS; all three exit criteria verified (idempotent apply, SA smoke test, remote state). Lock file now committed; `terraform` CI job added. §7.5 additions: userland CLI installs (no sudo), ADC vs CLI auth split, backend-block variable limitation, pre-existing GCP project. |
 | 1.4 | 2026-07-12 | Pre-Phase-2 audit + hygiene PR (Phase 1 merged as PR #4). Fixed two latent dbt config bugs (profiles `location: US` vs us-central1 datasets; `+schema: dbt` → `openaq_dbt_dbt` doubling); refreshed stale root and docs READMEs; recorded `terraform` as a verified required check. Python drift resolved: `.venv` rebuilt on uv-managed CPython 3.12.13. OpenAQ key re-probed: still 401 — hard Phase 2 blocker until regenerated. |
-| 1.5 | 2026-07-13 | Phase 2 complete (`feat/phase-2-ingestion`): tested v3 client (`ingestion/openaq/`), G2 fan-out to GCS raw NDJSON, 22 mocked unit tests, live AE+PK runs verified all three exit criteria. Per-sensor fault isolation added after a persistently-500ing PK sensor (15904590) aborted the first live run. §5 raw layout verified + extended with `locations.json` (measurement payloads carry no ids). §7.5: metadata-visible coverage gap (PK has zero no2 sensors; AE instrumentation partly dormant); `meta.found` can be a string. §8: backfill budget quantified — day-by-day PK backfill is 45h, Phase 5 must use wide datetime windows. §10: countries_id AE=59/PK=109. |
+| 1.5 | 2026-07-13 | Phase 2 complete (`feat/phase-2-ingestion`): tested v3 client (`ingestion/openaq/`), G2 fan-out to GCS raw NDJSON, 22 mocked unit tests, live AE+PK runs verified all three exit criteria. Per-sensor fault isolation added after a persistently-500ing PK sensor (15904590) aborted the first live run. §5 raw layout verified + extended with `locations.json` (measurement payloads carry no ids). §7.5: metadata-visible coverage gap (PK has zero no2 sensors; AE instrumentation partly dormant); `meta.found` can be a string. §8: backfill budget quantified — day-by-day PK backfill is 45h, Phase 5 must use wide datetime windows. §9: countries_id AE=59/PK=109. |
+| 1.6 | 2026-07-14 | Pre-Phase-3 audit + hygiene PR. Verified CI, branch protection, secrets hygiene, and live-GCP-vs-Terraform alignment ahead of Phase 3. Scoped this doc to architecture and state: split session-specific working notes out of the versioned doc, trimmed §0 to maintenance rules, removed the former §9 (sections renumbered), and aligned `docs/architecture.md` wording. |
