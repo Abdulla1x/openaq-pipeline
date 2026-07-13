@@ -4,10 +4,11 @@ Batch data engineering pipeline ingesting air-quality data from the OpenAQ v3
 API, comparing the UAE and Pakistan on PM2.5 / PM10 / NO2 against WHO 2021
 thresholds. The cross-country data-quality gap is itself an intended finding.
 
-**Status:** Phase 0 (repo hygiene + CI/CD) and Phase 1 (GCP infrastructure via
-Terraform) complete. Phase 2 (ingestion) is next; Phases 3–7 (orchestration,
-transformation, backfill, serving, polish) not yet started — see
-`docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
+**Status:** Phases 0–2 complete — repo hygiene + CI/CD, GCP infrastructure via
+Terraform, and the tested OpenAQ v3 ingestion client landing raw JSON in GCS.
+Phase 3 (Airflow orchestration) is next; Phases 4–7 (transformation, backfill,
+serving, polish) not yet started — see `docs/PROJECT_CONTEXT.md` §6 for the
+roadmap and exit criteria.
 
 ## Stack
 
@@ -27,7 +28,7 @@ transformation, backfill, serving, polish) not yet started — see
 .
 ├── airflow/        Airflow Docker image + config; DAGs land in Phase 3
 ├── dbt/            dbt project config; models/seeds land in Phase 4
-├── ingestion/      WHO threshold constants; OpenAQ v3 client lands in Phase 2
+├── ingestion/      OpenAQ v3 client (fan-out to GCS raw) + WHO threshold constants
 ├── infra/          Terraform IaC for GCP (bucket, datasets, service account)
 ├── scripts/        Dev utility scripts (bootstrap)
 ├── tests/          Pytest suite (unit now, integration in Phase 5)
