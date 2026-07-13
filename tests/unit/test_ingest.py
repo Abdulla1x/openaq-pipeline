@@ -6,7 +6,7 @@ import datetime as dt
 import pytest
 import responses
 
-from ingestion.openaq.client import OpenAQClient
+from ingestion.openaq.client import OpenAQAuthError, OpenAQClient
 from ingestion.openaq.ingest import (
     extract_target_sensors,
     ingest_country_day,
@@ -98,3 +98,30 @@ def test_ingest_country_day_end_to_end():
     )
     assert "datetime_from=2026-07-12T00%3A00%3A00Z" in measurements_url
     assert "datetime_to=2026-07-13T00%3A00%3A00Z" in measurements_url
+
+
+@responses.activate
+def test_broken_sensor_is_isolated_not_fatal():
+    """A sensor that persistently 500s (seen live: PK 15904590) must be
+    recorded as failed while the remaining sensors are still fetched."""
+    responses.get(f"{BASE}/countries", json=COUNTRIES)
+    responses.get(f"{BASE}/locations", body=LOCATIONS_BODY, content_type="application/json")
+    responses.get(f"{BASE}/sensors/11/measurements", status=500)  # every attempt
+    responses.get(f"{BASE}/sensors/13/measurements", json={"results": [{"value": 1.0}]})
+
+    writer = FakeWriter()
+    summary = ingest_country_day(make_client(), writer, "AE", DATE)
+
+    assert summary.sensors_failed == [11]
+    assert summary.sensors_with_data == 1  # sensor 13 still landed
+    assert [w[2] for w in writer.writes] == ["locations", 13]
+
+
+@responses.activate
+def test_auth_error_mid_fanout_is_fatal():
+    responses.get(f"{BASE}/countries", json=COUNTRIES)
+    responses.get(f"{BASE}/locations", body=LOCATIONS_BODY, content_type="application/json")
+    responses.get(f"{BASE}/sensors/11/measurements", status=401)
+
+    with pytest.raises(OpenAQAuthError):
+        ingest_country_day(make_client(), FakeWriter(), "AE", DATE)

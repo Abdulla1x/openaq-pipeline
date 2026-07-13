@@ -34,8 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     client = OpenAQClient(api_key=settings.api_key, base_url=settings.base_url)
     writer = make_raw_zone_writer(settings.bucket_name)
-    ingest_country_day(client, writer, args.country.upper(), args.date)
-    return 0
+    summary = ingest_country_day(client, writer, args.country.upper(), args.date)
+    # Partial failure is not silent success: landed data stays, but the run
+    # reports it so a rerun/orchestrator can catch up the failed sensors.
+    return 1 if summary.sensors_failed else 0
 
 
 if __name__ == "__main__":

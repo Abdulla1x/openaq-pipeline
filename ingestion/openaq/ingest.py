@@ -15,7 +15,9 @@ import datetime as dt
 import logging
 from dataclasses import dataclass, field
 
-from ingestion.openaq.client import OpenAQClient
+import requests
+
+from ingestion.openaq.client import OpenAQAuthError, OpenAQClient
 from ingestion.openaq.gcs import LOCATIONS_LEAF, RawZoneWriter
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,11 @@ class RunSummary:
     sensors_empty: int = 0
     measurements: int = 0
     objects_written: list[str] = field(default_factory=list)
+    # Sensors whose fetch failed after all retries (e.g. a sensor that
+    # persistently 500s server-side, observed live: PK sensor 15904590).
+    # One broken sensor must not abort the other ~450 — but the run still
+    # reports failure (CLI exits non-zero) so orchestration notices.
+    sensors_failed: list[int] = field(default_factory=list)
 
 
 def resolve_country_id(client: OpenAQClient, country_code: str) -> int:
@@ -87,11 +94,18 @@ def ingest_country_day(
     for sensor_id, parameter in sensors:
         page_bodies: list[str] = []
         records = 0
-        for response in client.paginate(f"/sensors/{sensor_id}/measurements", window):
-            page_records = len(response.json().get("results", []))
-            if page_records:
-                page_bodies.append(response.text)
-                records += page_records
+        try:
+            for response in client.paginate(f"/sensors/{sensor_id}/measurements", window):
+                page_records = len(response.json().get("results", []))
+                if page_records:
+                    page_bodies.append(response.text)
+                    records += page_records
+        except OpenAQAuthError:
+            raise  # bad credentials fail every request; isolating is pointless
+        except (RuntimeError, requests.RequestException) as exc:
+            summary.sensors_failed.append(sensor_id)
+            logger.error("sensor %s (%s): fetch failed, continuing: %s", sensor_id, parameter, exc)
+            continue
         if not page_bodies:
             summary.sensors_empty += 1
             logger.debug("sensor %s (%s): no measurements, skipped", sensor_id, parameter)
@@ -106,4 +120,9 @@ def ingest_country_day(
         country_code, date, summary.sensors_with_data, summary.sensors_targeted,
         summary.sensors_empty, summary.measurements, len(summary.objects_written),
     )
+    if summary.sensors_failed:
+        logger.error(
+            "%s %s: %d sensor(s) failed after retries: %s",
+            country_code, date, len(summary.sensors_failed), summary.sensors_failed,
+        )
     return summary
