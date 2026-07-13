@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.4 · **Last updated:** 2026-07-12 · **Current phase:** Phase 2 (not started)
+> **Version:** 1.5 · **Last updated:** 2026-07-13 · **Current phase:** Phase 3 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo. Mirror as a reference copy for ongoing design sessions.
 
 ---
@@ -127,7 +127,16 @@ openaq_dbt
   └── mart_annual_compare     table — annual-mean vs annual thresholds
 seed: who_thresholds          (pollutant, averaging_period, threshold_value, unit)
 ```
-GCS: `gs://{bucket}/raw/openaq/{country}/{YYYY-MM-DD}/{sensor_id}.json`
+GCS **[VERIFIED 2026-07-13, real data landed]**:
+```
+gs://{bucket}/raw/openaq/{country}/{YYYY-MM-DD}/{sensor_id}.json   per-sensor measurements
+gs://{bucket}/raw/openaq/{country}/{YYYY-MM-DD}/locations.json     verbatim locations pages (sensor→location inventory)
+```
+Object content is NDJSON: one line per **verbatim API page body** (G1). The
+`locations.json` addition exists because measurement payloads carry no
+sensor/location ids (verified against live API) — identity rides on the object
+path, and dbt needs the landed locations pages for the sensor→location join.
+Sensors with zero measurements in the window write no object.
 
 ---
 
@@ -190,7 +199,22 @@ Done:
 - [x] SA smoke test using its own key in an isolated `CLOUDSDK_CONFIG`: wrote an object to the raw bucket, created `openaq_raw.smoke_test` via `bq mk`, then cleaned both up (verified empty after).
 - [x] tfstate object present in the GCS backend (`terraform/state/default.tfstate`).
 
-**Not started:** §6 Phases 2–7. No ingestion code, DAG, dbt models, or dashboard exist yet.
+**Phase 2 — complete (`feat/phase-2-ingestion`, 2026-07-13).**
+
+Done:
+- `ingestion/openaq/` package: `config.py` (env-driven settings), `client.py` (X-API-Key session; throttles off `x-ratelimit-*` headers; 429 waits for the window, 5xx/connection errors back off exponentially with bounded retries; 401/403 fail fast; pagination terminates on a short page because `meta.found` can be a string like `">1000"`), `ingest.py` (the G2 fan-out, one parameterized entry point per G12), `gcs.py` (raw-zone writer, bucket handle injected for testability), `__main__.py` (manual CLI; Phase 3's DAG imports the functions instead).
+- Sensor scope decision: fetch only **pm25/pm10/no2** sensors — the pollutants the marts compare. Filtering is on sensor *metadata* (which sensors to call), not fetched data, so G7 holds. `TARGET_PARAMETERS` is one frozenset; widening it is a one-line change.
+- Raw layout implemented + verified (see §5), including the `locations.json` inventory objects (new — see §7.5 for why).
+- Per-sensor fault isolation (added after the first live PK run hit a persistently-500ing sensor — see §7.5): failed sensors land in `RunSummary.sensors_failed`, the rest of the fan-out completes, CLI exits 1 on partial failure.
+- 22 unit tests (`test_client.py` / `test_ingest.py` / `test_gcs.py`), API fully mocked via `responses` (G12), no network or credentials in CI. Runtime deps (`requests`, `google-cloud-storage`) added to `pyproject.toml` with pins matching `airflow/requirements.txt`; CI pytest job installs `-e .`.
+- Live manual runs for 2026-07-12 (UTC): **AE** — 31 locations, 52 target sensors, 8 with data / 44 empty, 192 measurements, 9 objects, exit 0. **PK** — 441 locations, 447 target sensors, 160 with data / 257 empty / 30 failed (all persistent server-side 500s), 3,460 measurements, 161 objects, exit 1 (correct: partial failure is reported, landed data stays). Spot-checked one landed object: byte-for-byte the API page body (24 hourly pm25 records).
+
+**Phase 2 exit criteria — verified:**
+- [x] Unit tests green (20 passed; ruff clean; all pinned to the 3.12 venv)
+- [x] Manual run lands real raw JSON for 1 day / 1 country (AE and PK both landed; objects listed + spot-checked in GCS)
+- [x] Empty responses don't crash (44 of AE's 52 sensors were empty on the target day — skipped and counted, exit 0; also unit-tested)
+
+**Not started:** §6 Phases 3–7. No DAG, dbt models, or dashboard exist yet.
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded; the forked `CourseScraping-BU` repo (remove/rebuild if referenced) — not addressed in Phase 0, still open.
 
@@ -221,6 +245,11 @@ Done:
 - **(Phase 1) Backend blocks cannot interpolate variables** — the tfstate bucket name is a literal in `main.tf`, not `var.project_id`. Known Terraform limitation; acceptable for a single-env project (multi-env would use partial backend config via `-backend-config`).
 - **(Phase 1) The GCP project pre-existed.** Planning assumed a from-scratch account, but `openaq-pipeline` (billing linked) already existed alongside unrelated projects — worth checking `gcloud projects list` before scripting account setup steps.
 - **(2026-07-12 audit) dbt job location must equal the dataset's region, exactly.** `location: US` (multi-region) in `profiles.yml` is not a superset that covers `us-central1` datasets — BigQuery jobs run in one location and fail with "dataset not found" on mismatch. Any future region change in Terraform must be mirrored in `profiles.yml`.
+- **(Phase 2) Measurement payloads carry no sensor/location ids.** `/v3/sensors/{id}/measurements` records contain value/parameter/period/coverage but no identifier tying them back to the sensor or location (verified live 2026-07-13). Identity therefore rides on the GCS object path (`{sensor_id}.json`), which Phase 3 must preserve into `source_uri`; and each run also lands the verbatim `/v3/locations` pages as `locations.json` so dbt can join sensors to locations/coordinates/monitor-type. Without that landing, Phase 4 would have to call the API from dbt — a non-starter.
+- **(Phase 2) `/v3/locations` embeds each location's sensor list** (id + parameter), so the G2 fan-out needs no per-location sensors call: a country-day costs `2 + n_sensors` requests (+1 per countries page).
+- **(Phase 2) The coverage gap is visible in pure metadata.** AE: 31 locations, 18 reference monitors, sensors spread across pollutants (pm10 21 / no2 17 / pm25 14). PK: 441 locations but only 5 reference monitors, 441 pm25 low-cost sensors, 6 pm10, and **zero no2 sensors** — the NO2 comparison is empirically one-sided with current OpenAQ coverage; the marts must surface this, not paper over it. Also AE's instrumentation is partly dormant: only 8/52 target sensors reported data on 2026-07-12.
+- **(Phase 2) Individual sensors can be persistently broken server-side.** The first live PK run aborted at sensor 15904590, which returns an instant HTTP 500 on every attempt (verified by direct probe — no rate-limit headers, not a throttling artifact). Retries cannot fix a server-side data bug, and one broken sensor out of 447 must not lose the rest of the fan-out. Fixed: per-sensor failures are isolated into `RunSummary.sensors_failed` and the CLI exits 1 on partial failure — landed data stays, but partial success is never silent. Auth errors (401/403) remain fatal for the whole run. The full PK run then found **30** such sensors — in contiguous id blocks (16034750–79, 16242897–915), likely newly-onboarded batches with a broken data backend — so Phase 3's DAG must treat nonzero `sensors_failed` as normal, not a reason to discard the run. Cost note: 5 retry attempts × exponential backoff ≈ 62s per broken sensor (~31 min of the 39-min PK run); Phase 3/5 should cut attempts for instant 5xxs or track known-bad sensors.
+- **(Phase 2) `meta.found` is not always an int** (the API can report `">1000"`), so pagination terminates on `len(results) < limit`, never on `found`.
 - **(2026-07-12 audit) dbt `+schema:` is a suffix, not a target.** With the default `generate_schema_name` macro, `+schema: dbt` on top of a profile `dataset: openaq_dbt` yields `openaq_dbt_dbt`. The least-privilege SA (dataset-scoped `dataEditor`, no dataset-create permission) would have turned this into a hard permission failure in Phase 4 — removed the overrides; the profile's dataset is the single source of the target.
 
 ---
@@ -229,8 +258,8 @@ Done:
 
 - **OpenAQ v3 free-tier rate limits — partially answered 2026-07-12:** response headers on a live call show `x-ratelimit-limit: 60` with `x-ratelimit-reset: 60`, i.e. **60 requests/minute**. The per-sensor fan-out makes this load-bearing: the Phase 2 client must throttle/backoff off these headers, and backfill (Phase 5) must budget for it. Whether an additional daily cap exists is still unconfirmed — watch for it during the first real ingestion runs.
 - ~~**The `OPENAQ_API_KEY` in `.env` is invalid**~~ **RESOLVED 2026-07-12:** the old key 401'd on probes of `/v3/countries` (2026-07-07 and 2026-07-12); regenerated at explore.openaq.org and verified live — HTTP 200, rate-limit headers captured (see above). No longer a Phase 2 blocker. (The 2026-07-07 probe also confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
-- **Backfill volume** — hundreds of sensors × 1–2 years × pagination = heavy. Chunk by date window and/or sensor batch.
-- **Verified vs asserted schema** — `raw_measurements` and the parsed staging columns are `[ASSERTED]` until Phase 2/3 land real data.
+- **Backfill volume — now quantified (2026-07-13 recon):** a country-day costs `2 + n_sensors` requests. AE = 52 target sensors (~1 min/day at 60 req/min), PK = 447 (~7.5 min/day). Day-by-day backfill of PK × 365 days ≈ 165k requests ≈ **45 hours** — not viable. Phase 5 must widen the `datetime_from/to` window per sensor (the endpoint paginates at 1000 records; an hourly sensor fits ~41 days/page), cutting PK×1yr to roughly 4k requests ≈ 1.5 h. No additional daily cap was observed across ~500 requests in the Phase 2 runs — still watch during backfill.
+- **Verified vs asserted schema** — the GCS raw layout and measurement payload shape are now **verified** (§5, §7.5). `raw_measurements` (BQ table) and the parsed staging columns remain `[ASSERTED]` until Phase 3 lands the load job.
 
 ---
 
@@ -247,6 +276,8 @@ Done:
 
 - WHO thresholds in §4/G5 are the **2021** Global Air Quality Guidelines (verified 2026-06-18).
 - OpenAQ **v3** is sensor-centric per §4/G2 (verified against OpenAQ docs 2026-06-18): `countries → locations → sensors → measurements`, country filtered by `countries_id`.
+- `countries_id`: **AE = 59, PK = 109** (verified live 2026-07-13).
+- Measurements endpoint takes `datetime_from`/`datetime_to` (ISO-8601 Z) + `limit`/`page`; records are period-aggregated (`period.label: "raw"`, hourly interval observed) with a `coverage` block — verified live 2026-07-13.
 
 ---
 
@@ -259,3 +290,4 @@ Done:
 | 1.2 | 2026-07-07 | Pre-Phase-1 audit + hygiene PR. Rewrote six stale scaffold-era READMEs that still described the banned pre-correction design; deleted four surviving empty tracked files; fixed invalid pyproject build-backend. Recorded new open question (OPENAQ_API_KEY 401) and §7.5 discoveries (docs are design surface; docker-compose keys-mount gap; O3 seed labeling debt). G2 empirically confirmed: flat /v3/measurements returns 404. |
 | 1.3 | 2026-07-12 | Phase 1 complete (`feat/phase-1-terraform`). All GCP via Terraform (G11): raw bucket, two datasets, least-privilege SA, remote tfstate in GCS; all three exit criteria verified (idempotent apply, SA smoke test, remote state). Lock file now committed; `terraform` CI job added. §7.5 additions: userland CLI installs (no sudo), ADC vs CLI auth split, backend-block variable limitation, pre-existing GCP project. |
 | 1.4 | 2026-07-12 | Pre-Phase-2 audit + hygiene PR (Phase 1 merged as PR #4). Fixed two latent dbt config bugs (profiles `location: US` vs us-central1 datasets; `+schema: dbt` → `openaq_dbt_dbt` doubling); refreshed stale root and docs READMEs; recorded `terraform` as a verified required check. Python drift resolved: `.venv` rebuilt on uv-managed CPython 3.12.13. OpenAQ key re-probed: still 401 — hard Phase 2 blocker until regenerated. |
+| 1.5 | 2026-07-13 | Phase 2 complete (`feat/phase-2-ingestion`): tested v3 client (`ingestion/openaq/`), G2 fan-out to GCS raw NDJSON, 22 mocked unit tests, live AE+PK runs verified all three exit criteria. Per-sensor fault isolation added after a persistently-500ing PK sensor (15904590) aborted the first live run. §5 raw layout verified + extended with `locations.json` (measurement payloads carry no ids). §7.5: metadata-visible coverage gap (PK has zero no2 sensors; AE instrumentation partly dormant); `meta.found` can be a string. §8: backfill budget quantified — day-by-day PK backfill is 45h, Phase 5 must use wide datetime windows. §10: countries_id AE=59/PK=109. |
