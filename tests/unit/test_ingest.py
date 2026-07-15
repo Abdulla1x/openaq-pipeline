@@ -9,6 +9,7 @@ import responses
 from ingestion.openaq.client import OpenAQAuthError, OpenAQClient
 from ingestion.openaq.ingest import (
     extract_target_sensors,
+    fetch_sensor_day,
     ingest_country_day,
     resolve_country_id,
 )
@@ -115,6 +116,46 @@ def test_broken_sensor_is_isolated_not_fatal():
     assert summary.sensors_failed == [11]
     assert summary.sensors_with_data == 1  # sensor 13 still landed
     assert [w[2] for w in writer.writes] == ["locations", 13]
+
+
+# fetch_sensor_day is the unit of work Phase 3's mapped Airflow tasks call
+# directly, so its dict contract is pinned here, not just via the CLI loop.
+
+
+@responses.activate
+def test_fetch_sensor_day_ok():
+    responses.get(f"{BASE}/sensors/11/measurements", body=SENSOR_11_BODY,
+                  content_type="application/json")
+    writer = FakeWriter()
+    result = fetch_sensor_day(make_client(), writer, "AE", DATE, 11, "pm25")
+    assert result == {
+        "sensor_id": 11,
+        "parameter": "pm25",
+        "status": "ok",
+        "measurements": 2,
+        "uri": "gs://fake/raw/openaq/AE/2026-07-12/11.json",
+        "error": None,
+    }
+    assert writer.writes[0][3] == [SENSOR_11_BODY]  # verbatim page body
+
+
+@responses.activate
+def test_fetch_sensor_day_empty_writes_nothing():
+    responses.get(f"{BASE}/sensors/13/measurements", json={"results": []})
+    writer = FakeWriter()
+    result = fetch_sensor_day(make_client(), writer, "AE", DATE, 13, "no2")
+    assert result["status"] == "empty"
+    assert result["uri"] is None
+    assert writer.writes == []
+
+
+@responses.activate
+def test_fetch_sensor_day_failure_is_reported_not_raised():
+    responses.get(f"{BASE}/sensors/11/measurements", status=500)  # every attempt
+    result = fetch_sensor_day(make_client(), FakeWriter(), "AE", DATE, 11, "pm25")
+    assert result["status"] == "failed"
+    assert "attempts" in result["error"]
+    assert result["measurements"] == 0
 
 
 @responses.activate

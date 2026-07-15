@@ -78,3 +78,28 @@ jobs:
         run: pip install -e . -r requirements-dev.txt
       - name: Run tests
         run: pytest tests/unit/ -v
+
+  dag-validate:
+    name: dag-validate
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: test-project
+      GCS_BUCKET_NAME: test-bucket
+      BIGQUERY_RAW_DATASET: openaq_raw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Mirrors the Airflow image build: core + image requirements resolved
+      # together under the official constraints (an unconstrained install
+      # lets pip drift transitive deps — numpy 2.x broke the image's pandas).
+      - name: Install Airflow + image requirements + package
+        run: |
+          pip install "apache-airflow==2.9.1" -r airflow/requirements.txt --constraint \
+            "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt"
+          pip install -e . -r requirements-dev.txt
+      - name: Guard against dependency drift from the project install
+        run: pip check
+      - name: DAG integrity tests
+        run: pytest tests/dags/ -v

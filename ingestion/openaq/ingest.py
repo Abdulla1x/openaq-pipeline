@@ -65,6 +65,56 @@ def extract_target_sensors(location_pages: list[dict]) -> list[tuple[int, str]]:
     return sorted(sensors.items())
 
 
+def fetch_sensor_day(
+    client: OpenAQClient,
+    writer: RawZoneWriter,
+    country_code: str,
+    date: dt.date,
+    sensor_id: int,
+    parameter: str,
+) -> dict:
+    """Fetch one sensor's measurements for one UTC day and land them raw.
+
+    The unit of work for Phase 3's dynamically mapped Airflow tasks (G3), so
+    the return value is a plain JSON-serializable dict (XCom-safe):
+    ``status`` is ``"ok"`` (object written), ``"empty"`` (no data, nothing
+    written), or ``"failed"`` (fetch failed after retries — isolated per G12's
+    fault-isolation decision; auth errors still propagate, since bad
+    credentials fail every sensor and isolating them is pointless).
+    """
+    result = {
+        "sensor_id": sensor_id,
+        "parameter": parameter,
+        "status": "empty",
+        "measurements": 0,
+        "uri": None,
+        "error": None,
+    }
+    window = {
+        "datetime_from": f"{date.isoformat()}T00:00:00Z",
+        "datetime_to": f"{(date + dt.timedelta(days=1)).isoformat()}T00:00:00Z",
+    }
+    page_bodies: list[str] = []
+    try:
+        for response in client.paginate(f"/sensors/{sensor_id}/measurements", window):
+            page_records = len(response.json().get("results", []))
+            if page_records:
+                page_bodies.append(response.text)
+                result["measurements"] += page_records
+    except OpenAQAuthError:
+        raise
+    except (RuntimeError, requests.RequestException) as exc:
+        result.update(status="failed", measurements=0, error=str(exc))
+        logger.error("sensor %s (%s): fetch failed: %s", sensor_id, parameter, exc)
+        return result
+    if page_bodies:
+        result["uri"] = writer.write_pages(country_code, date, sensor_id, page_bodies)
+        result["status"] = "ok"
+    else:
+        logger.debug("sensor %s (%s): no measurements, skipped", sensor_id, parameter)
+    return result
+
+
 def ingest_country_day(
     client: OpenAQClient, writer: RawZoneWriter, country_code: str, date: dt.date
 ) -> RunSummary:
@@ -87,33 +137,16 @@ def ingest_country_day(
         country_code, summary.locations, len(sensors), ", ".join(sorted(TARGET_PARAMETERS)),
     )
 
-    window = {
-        "datetime_from": f"{date.isoformat()}T00:00:00Z",
-        "datetime_to": f"{(date + dt.timedelta(days=1)).isoformat()}T00:00:00Z",
-    }
     for sensor_id, parameter in sensors:
-        page_bodies: list[str] = []
-        records = 0
-        try:
-            for response in client.paginate(f"/sensors/{sensor_id}/measurements", window):
-                page_records = len(response.json().get("results", []))
-                if page_records:
-                    page_bodies.append(response.text)
-                    records += page_records
-        except OpenAQAuthError:
-            raise  # bad credentials fail every request; isolating is pointless
-        except (RuntimeError, requests.RequestException) as exc:
+        result = fetch_sensor_day(client, writer, country_code, date, sensor_id, parameter)
+        if result["status"] == "failed":
             summary.sensors_failed.append(sensor_id)
-            logger.error("sensor %s (%s): fetch failed, continuing: %s", sensor_id, parameter, exc)
-            continue
-        if not page_bodies:
+        elif result["status"] == "empty":
             summary.sensors_empty += 1
-            logger.debug("sensor %s (%s): no measurements, skipped", sensor_id, parameter)
-            continue
-        uri = writer.write_pages(country_code, date, sensor_id, page_bodies)
-        summary.objects_written.append(uri)
-        summary.sensors_with_data += 1
-        summary.measurements += records
+        else:
+            summary.objects_written.append(result["uri"])
+            summary.sensors_with_data += 1
+            summary.measurements += result["measurements"]
 
     logger.info(
         "%s %s: %d/%d sensors had data (%d empty), %d measurements, %d objects written",

@@ -78,6 +78,20 @@ def test_gives_up_after_max_attempts():
 
 
 @responses.activate
+def test_max_attempts_is_tunable():
+    """The Phase 3 DAG runs with max_attempts=2 so persistently-broken sensors
+    (30 known on PK) don't burn the full 5-attempt backoff each."""
+    responses.get(f"{BASE}/countries", status=500)
+    responses.get(f"{BASE}/countries", status=500)
+
+    client = OpenAQClient(api_key="k", base_url=BASE, sleep=lambda _: None, max_attempts=2)
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        client.get("/countries")
+
+    assert len(responses.calls) == 2
+
+
+@responses.activate
 def test_auth_error_fails_fast_without_retry():
     responses.get(f"{BASE}/countries", status=401)
 
