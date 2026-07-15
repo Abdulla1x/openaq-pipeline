@@ -1,16 +1,24 @@
-# ── Airflow providers ────────────────────────────────────────────────────────
-# Pins are tested against apache/airflow:2.9.1 base image.
-apache-airflow-providers-google==10.19.0
+# Installed on top of apache/airflow:2.9.1 TOGETHER WITH the official
+# constraints file for that release (see Dockerfile / the dag-validate CI
+# job). Phase 3 learned this the hard way: unconstrained installs let pip
+# drift transitive deps — numpy 2.x broke the constraint-pinned pandas
+# (1.x-ABI), so pins here must agree with constraints-2.9.1.
+#
+# dbt is deliberately NOT airflow-constrained upstream; its pins below are
+# resolved against the same constraint set (verified in the dag-validate job).
+
+# ── Airflow providers (constraint-tested versions for 2.9.1) ─────────────────
+apache-airflow-providers-google==10.17.0
 
 # ── OpenAQ HTTP client ────────────────────────────────────────────────────────
 requests==2.31.0
 
 # ── GCP libraries ─────────────────────────────────────────────────────────────
 google-cloud-storage==2.16.0
-google-cloud-bigquery==3.19.0
+google-cloud-bigquery==3.21.0
 db-dtypes==1.2.0          # required by bigquery pandas integration
+numpy==1.26.4             # pandas in the base image is numpy-1.x ABI
 
 # ── dbt (BigQuery adapter) ────────────────────────────────────────────────────
 dbt-core==1.8.3
 dbt-bigquery==1.8.2
-
