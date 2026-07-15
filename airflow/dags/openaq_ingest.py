@@ -55,8 +55,11 @@ GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "")
 BIGQUERY_RAW_DATASET = os.environ.get("BIGQUERY_RAW_DATASET", "openaq_raw")
 RAW_TABLE = f"{GCP_PROJECT_ID}.{BIGQUERY_RAW_DATASET}.raw_measurements"
 
-# The ingest→transform interface contract (G9).
-RAW_MEASUREMENTS_DATASET = Dataset(f"bigquery://{BIGQUERY_RAW_DATASET}/raw_measurements")
+# The ingest→transform interface contract (G9). The google provider enforces
+# the full bigquery://project/dataset/table form for this URI scheme.
+RAW_MEASUREMENTS_DATASET = Dataset(
+    f"bigquery://{GCP_PROJECT_ID}/{BIGQUERY_RAW_DATASET}/raw_measurements"
+)
 
 ENSURE_RAW_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS `{RAW_TABLE}` (
@@ -90,10 +93,14 @@ def _client_and_writer() -> tuple[OpenAQClient, object]:
     return client, make_raw_zone_writer(settings.bucket_name)
 
 
-@task(multiple_outputs=True, retries=1)
-def prepare_country_run(country_code: str) -> dict:
+@task(retries=1)
+def prepare_country_run(country_code: str) -> list[dict]:
     """Resolve the country, land the verbatim locations inventory, and emit
-    the sensor list the mapped fetch tasks expand over."""
+    the sensor list the mapped fetch tasks expand over.
+
+    Returns only the plain list: dynamic mapping can expand solely over a
+    task's default return_value XCom, not over keyed (multiple_outputs) ones.
+    """
     client, writer = _client_and_writer()
     date = _run_date()
     country_id = resolve_country_id(client, country_code)
@@ -108,10 +115,7 @@ def prepare_country_run(country_code: str) -> dict:
         "%s (countries_id=%s): %d locations, %d target sensors",
         country_code, country_id, n_locations, len(sensors),
     )
-    return {
-        "sensor_specs": [{"sensor_id": s, "parameter": p} for s, p in sensors],
-        "locations": n_locations,
-    }
+    return [{"sensor_id": s, "parameter": p} for s, p in sensors]
 
 
 @task(pool=API_POOL, retries=1, execution_timeout=dt.timedelta(minutes=15))
@@ -125,7 +129,7 @@ def fetch_sensor(country_code: str, spec: dict) -> dict:
 
 
 @task
-def summarize_country(country_code: str, locations: int, results: list[dict]) -> dict:
+def summarize_country(country_code: str, results: list[dict]) -> dict:
     """Aggregate mapped-fetch outcomes; fail the run only past the threshold."""
     by_status: dict[str, list[dict]] = {"ok": [], "empty": [], "failed": []}
     for result in results:
@@ -134,8 +138,8 @@ def summarize_country(country_code: str, locations: int, results: list[dict]) ->
     failed_ids = sorted(r["sensor_id"] for r in by_status["failed"])
     total = len(results)
     logger.info(
-        "%s: %d locations, %d/%d sensors with data (%d empty), %d measurements",
-        country_code, locations, len(by_status["ok"]), total,
+        "%s: %d/%d sensors with data (%d empty), %d measurements",
+        country_code, len(by_status["ok"]), total,
         len(by_status["empty"]), measurements,
     )
     if failed_ids:
@@ -202,11 +206,11 @@ def openaq_ingest():
 
         @task_group(group_id=f"ingest_{country.lower()}")
         def ingest_country(country_code: str):
-            prep = prepare_country_run(country_code)
+            sensor_specs = prepare_country_run(country_code)
             results = fetch_sensor.partial(country_code=country_code).expand(
-                spec=prep["sensor_specs"]
+                spec=sensor_specs
             )
-            return summarize_country(country_code, prep["locations"], results)
+            return summarize_country(country_code, results)
 
         summaries.append(ingest_country(country))
 
