@@ -53,6 +53,9 @@ FAILURE_RATE_THRESHOLD = 0.20
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "")
 BIGQUERY_RAW_DATASET = os.environ.get("BIGQUERY_RAW_DATASET", "openaq_raw")
+# BQ jobs run in one location, which must equal the dataset's region exactly
+# (same lesson as the dbt profiles.yml fix in the pre-Phase-2 audit).
+BIGQUERY_LOCATION = os.environ.get("BIGQUERY_LOCATION", "us-central1")
 RAW_TABLE = f"{GCP_PROJECT_ID}.{BIGQUERY_RAW_DATASET}.raw_measurements"
 
 # The ingest→transform interface contract (G9). The google provider enforces
@@ -181,8 +184,13 @@ def reconcile_counts(summaries: list[dict]) -> None:
           AND source_uri NOT LIKE '%/{LOCATIONS_LEAF}.json'
           AND ingested_at = (SELECT MAX(ingested_at) FROM `{RAW_TABLE}` WHERE {day_filter})
     """
-    hook = BigQueryHook(gcp_conn_id=GCP_CONN_ID, use_legacy_sql=False)
-    bq_total = int(hook.get_records(sql)[0][0])
+    # The native client, not hook.get_records(): the hook's DB-API layer
+    # mishandles job location (job created in one location, polled in
+    # another → 404, seen live). query_and_wait pins the location end-to-end.
+    hook = BigQueryHook(gcp_conn_id=GCP_CONN_ID)
+    client = hook.get_client(project_id=hook.project_id, location=BIGQUERY_LOCATION)
+    rows = list(client.query_and_wait(sql))
+    bq_total = int(rows[0][0])
     if bq_total != api_total:
         raise RuntimeError(
             f"count mismatch for {ds}: API run fetched {api_total} measurements, "
@@ -231,8 +239,13 @@ def openaq_ingest():
                 "tableDefinitions": {
                     "raw_lines": {
                         "sourceFormat": "CSV",
+                        # Wildcard deliberately ends at /* (not /*.json): in a
+                        # templated field Airflow treats any string ending in
+                        # .json as a template FILE to load (template_ext) and
+                        # fails with TemplateNotFound. The date prefix holds
+                        # only the run's NDJSON objects, so /* is equivalent.
                         "sourceUris": [
-                            f"gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/{c}/{{{{ ds }}}}/*.json"
+                            f"gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/{c}/{{{{ ds }}}}/*"
                             for c in COUNTRIES
                         ],
                         "schema": {"fields": [{"name": "line", "type": "STRING"}]},

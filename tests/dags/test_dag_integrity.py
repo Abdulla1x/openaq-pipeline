@@ -78,7 +78,9 @@ def test_load_runs_after_both_countries_and_before_reconcile(ingest_dag):
 def test_load_reads_both_country_prefixes_verbatim(ingest_dag):
     load = ingest_dag.get_task("load_raw_to_bq")
     uris = load.configuration["query"]["tableDefinitions"]["raw_lines"]["sourceUris"]
+    # Must not end in .json: template_ext would make Airflow load the URI as
+    # a template file at render time (TemplateNotFound — seen live).
     assert uris == [
-        "gs://test-bucket/raw/openaq/AE/{{ ds }}/*.json",
-        "gs://test-bucket/raw/openaq/PK/{{ ds }}/*.json",
+        "gs://test-bucket/raw/openaq/AE/{{ ds }}/*",
+        "gs://test-bucket/raw/openaq/PK/{{ ds }}/*",
     ]
