@@ -58,6 +58,10 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    # Root, like the upstream reference compose: this service bypasses the
+    # image entrypoint (plain bash), so an arbitrary host uid from
+    # AIRFLOW_UID has no passwd entry here and the airflow CLI refuses it.
+    user: "0:0"
     entrypoint: /bin/bash
     command:
       - -c
