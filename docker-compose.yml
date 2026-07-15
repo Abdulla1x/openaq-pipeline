@@ -14,9 +14,17 @@ x-airflow-common: &airflow-common
     GCP_PROJECT_ID: ${GCP_PROJECT_ID}
     GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
     BIGQUERY_DATASET: ${BIGQUERY_DATASET}
-    GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/opt/airflow/keys/service-account.json}
+    BIGQUERY_RAW_DATASET: ${BIGQUERY_RAW_DATASET:-openaq_raw}
+    # Container path, deliberately NOT the .env value — .env holds the HOST
+    # path for CLI runs; inside the container the key is the volume mount below.
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/service-account.json
+    # G10: GCP operators/hooks authenticate via an Airflow Connection
+    # (gcp_conn_id="google_cloud_default"), defined here in JSON form.
+    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: '{"conn_type": "google_cloud_platform", "extra": {"key_path": "/opt/airflow/keys/service-account.json", "project": "${GCP_PROJECT_ID}"}}'
     OPENAQ_API_KEY: ${OPENAQ_API_KEY}
     OPENAQ_API_BASE_URL: ${OPENAQ_API_BASE_URL:-https://api.openaq.org/v3}
+    # DAGs import ingestion.openaq.* from the volume mount below.
+    PYTHONPATH: /opt/airflow
     # dbt
     DBT_PROJECT_DIR: ${DBT_PROJECT_DIR:-/opt/airflow/dbt}
     DBT_PROFILES_DIR: ${DBT_PROFILES_DIR:-/opt/airflow/dbt}
@@ -25,6 +33,8 @@ x-airflow-common: &airflow-common
     - ./airflow/plugins:/opt/airflow/plugins
     - ./logs:/opt/airflow/logs
     - ./dbt:/opt/airflow/dbt
+    - ./ingestion:/opt/airflow/ingestion
+    - ${GCP_KEY_FILE:?set GCP_KEY_FILE in .env to the host path of the service-account key}:/opt/airflow/keys/service-account.json:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
@@ -60,6 +70,7 @@ services:
           --lastname User \
           --role Admin \
           --email admin@example.com
+        airflow pools set openaq_api 4 "OpenAQ v3 rate-limit budget (60 req/min shared across mapped fetch tasks)"
     restart: "no"
 
   webserver:
