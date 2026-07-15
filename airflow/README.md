@@ -1,23 +1,46 @@
 # airflow/
 
-Airflow Docker configuration for pipeline orchestration. DAGs and operators
-land in Phase 3.
+Airflow Docker configuration and DAGs for pipeline orchestration.
 
 ## Contents (current)
 
 ```
 airflow/
-├── dags/               Empty until Phase 3
-├── plugins/operators/  Empty until Phase 3
-├── Dockerfile          Custom Airflow 2.9.1 image with project dependencies
-└── requirements.txt    Python packages baked into the Airflow image
+├── dags/
+│   └── openaq_ingest.py  Daily raw-ingestion DAG (Phase 3)
+├── plugins/operators/    Empty — no custom operators needed so far
+├── Dockerfile            Airflow 2.9.1 image + project deps, installed under
+│                         the official constraints for reproducibility
+└── requirements.txt      Python packages baked into the Airflow image
 ```
 
 Runtime logs are written to the repo-root `logs/` directory (gitignored,
 mounted as a Docker volume by `docker-compose.yml`).
 
-## Planned (Phase 3)
+## The ingest DAG (`openaq_ingest`)
 
-An ingest DAG using **dynamic task mapping** over the sensor list (G3), loading
-raw JSON to BigQuery with WRITE_APPEND (G4), and emitting an Airflow Dataset; a
-transform DAG scheduled on that Dataset runs dbt via astronomer-cosmos (G9).
+Daily at 02:00 UTC, for the previous (completed) UTC day; per country (AE, PK):
+
+1. `prepare_country_run` — resolves the country, lands the verbatim
+   `locations.json` inventory in GCS, emits the target-sensor list.
+2. `fetch_sensor` — **dynamically mapped** over that list (G3), one task per
+   sensor, throttled by the `openaq_api` pool (4 slots vs the 60 req/min API
+   limit). Per-sensor failures return `status="failed"` instead of raising.
+3. `summarize_country` — aggregates outcomes; fails only if >20% of sensor
+   fetches failed (a handful of persistently broken PK sensors is normal).
+4. `ensure_raw_table` + `load_raw_to_bq` — appends verbatim page bodies into
+   `openaq_raw.raw_measurements (raw_payload JSON, ingested_at, source_uri)`
+   via a temp external table; `_FILE_NAME` becomes `source_uri` (G1/G4).
+   Emits the `bigquery://…/raw_measurements` **Dataset** that will schedule
+   the Phase 4 transform DAG (G9).
+5. `reconcile_counts` — asserts API-run measurement totals equal what the
+   latest batch landed in BigQuery.
+
+DAG structure is tested by `tests/dags/test_dag_integrity.py` (the
+`dag-validate` CI job); `make dag-test` runs a quick import check inside the
+container.
+
+## Planned (Phase 4)
+
+A transform DAG scheduled on the raw-measurements Dataset, running dbt via
+astronomer-cosmos (G9).
