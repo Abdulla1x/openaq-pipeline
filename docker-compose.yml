@@ -15,6 +15,7 @@ x-airflow-common: &airflow-common
     GCS_BUCKET_NAME: ${GCS_BUCKET_NAME}
     BIGQUERY_DATASET: ${BIGQUERY_DATASET}
     BIGQUERY_RAW_DATASET: ${BIGQUERY_RAW_DATASET:-openaq_raw}
+    BIGQUERY_LOCATION: ${BIGQUERY_LOCATION:-us-central1}
     # Container path, deliberately NOT the .env value — .env holds the HOST
     # path for CLI runs; inside the container the key is the volume mount below.
     GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/service-account.json

@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.6 · **Last updated:** 2026-07-14 · **Current phase:** Phase 3 (not started)
+> **Version:** 1.7 · **Last updated:** 2026-07-15 · **Current phase:** Phase 4 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo.
 
 ---
@@ -113,7 +113,8 @@ Store as a seed with columns `(pollutant, averaging_period, threshold_value, uni
 
 ```
 openaq_raw
-  └── raw_measurements        raw_payload JSON, ingested_at TIMESTAMP, source_uri STRING   [ASSERTED]
+  └── raw_measurements        raw_payload JSON, ingested_at TIMESTAMP, source_uri STRING
+                              partitioned by DATE(ingested_at)   [VERIFIED 2026-07-15, live load]
 openaq_dbt
   ├── stg_measurements        view  — parse JSON, dedup, unit-standardize
   ├── int_daily_aqi           table — daily_avg/max/min, reading_count, hours_covered
@@ -131,6 +132,14 @@ Object content is NDJSON: one line per **verbatim API page body** (G1). The
 sensor/location ids (verified against live API) — identity rides on the object
 path, and dbt needs the landed locations pages for the sensor→location join.
 Sensors with zero measurements in the window write no object.
+
+The Phase 3 load reads each day prefix with a `/*` wildcard, so **the
+`locations.json` pages land in `raw_measurements` too** (one row per page,
+identifiable by `source_uri`). Deliberate: Phase 4's staging gets the
+sensor→location inventory straight from BigQuery — no second load path.
+`raw_measurements` rows are *pages*, not measurements; staging must UNNEST
+`raw_payload.results` and parse sensor/country/day identity out of
+`source_uri`.
 
 ---
 
@@ -207,7 +216,27 @@ Done:
 - [x] Manual run lands real raw JSON for 1 day / 1 country (AE and PK both landed; objects listed + spot-checked in GCS)
 - [x] Empty responses don't crash (44 of AE's 52 sensors were empty on the target day — skipped and counted, exit 0; also unit-tested)
 
-**Not started:** §6 Phases 3–7. No DAG, dbt models, or dashboard exist yet.
+**Phase 3 — complete (`feat/phase-3-orchestration`, 2026-07-15).**
+
+Done:
+- `airflow/dags/openaq_ingest.py`: daily 02:00 UTC for the previous complete UTC day (`ds`). Per country (static task group; nested mapping isn't supported): `prepare_country_run` (lands `locations.json`, emits the sensor list) → `fetch_sensor` **dynamically mapped** over the sensors (G3) behind the `openaq_api` pool (4 slots vs the 60 req/min limit; client `max_attempts=2`) → `summarize_country`. Then `ensure_raw_table` (DDL `IF NOT EXISTS`; Terraform still owns no tables) → `load_raw_to_bq` → `reconcile_counts`.
+- **Failure model — catch + threshold (decided 2026-07-15):** mapped fetch tasks return `status="failed"` as *data* instead of raising; a country fails only above 20% sensor-fetch failures. Rationale: ~30 persistently-broken PK sensors make per-sensor red tasks a permanent false alarm — "failed DAG" must stay a real alert. Auth errors still fail the run.
+- **Load design:** `BigQueryInsertJobOperator` over a temp external table (CSV, `\x01` delimiter, quoting off → one string column per NDJSON line): `INSERT … SELECT PARSE_JSON(line, wide_number_mode=>'round'), CURRENT_TIMESTAMP(), _FILE_NAME`. `_FILE_NAME` → `source_uri` carries identity (G1/G4); append-only, dbt dedups. Emits Dataset `bigquery://openaq-pipeline/openaq_raw/raw_measurements` (G9 — Phase 4's schedule contract).
+- `reconcile_counts`: latest-batch measurement total in BQ (excluding `locations.json` rows) must equal the run's API-side count; `ingested_at` is one `CURRENT_TIMESTAMP()` per INSERT, so `MAX(ingested_at)` isolates a batch across reruns.
+- Ingestion refactor: `fetch_sensor_day()` extracted as the mapped-task unit of work (XCom-safe dict contract, unit-tested); `OpenAQClient(max_attempts=…)`.
+- Wiring: `./ingestion` + SA key mounted into the containers (closes the Phase 0-deferred keys gap); in-container `GOOGLE_APPLICATION_CREDENTIALS` is the fixed container path (the `.env` value is the *host* path for CLI runs); `google_cloud_default` connection via JSON env var (G10); `openaq_api` pool created idempotently by `airflow-init` (which runs as root — see §7.5).
+- Tests/CI: `tests/dags/test_dag_integrity.py` (DagBag import, structure, mapped fetch + pool, Dataset outlet, source URIs) in a new **`dag-validate`** CI job that mirrors the image's constrained install; `make dag-test` for the quick in-container check. 26 unit tests (4 new).
+- Dependency reproducibility fix: image + CI installs now apply the official constraints-2.9.1 file; pins aligned (google provider 10.17.0, google-cloud-bigquery 3.21.0, numpy 1.26.4) — see §7.5.
+
+**Phase 3 exit criteria — verified (live, 2026-07-15, ds=2026-07-14):**
+- [x] DAG green end-to-end: run succeeded — AE 8/52 sensors with data (192 measurements), PK 180/447 (3,624), 35 failed PK sensors = 7.8% < threshold, run stays green by design
+- [x] BQ counts reconcile vs API: 3,816 == 3,816 (reconcile task, latest batch)
+- [x] Same-day rerun safe: full rerun green; two `ingested_at` batches with identical shape (190 page rows / 4,288 records / 2 locations objects each) — append confirmed, dedup deferred to dbt (G4)
+- [x] Dataset emitted: `dataset_event` rows recorded on load success (visible in the UI Datasets tab)
+
+**Deferred to Phase 5 (recorded, deliberate):** G4 rolling lookback (re-fetch last N days) and known-bad-sensor tracking — both belong with the wide-window backfill mechanics. Scheduled runs only fire while the compose stack is up; missed days are backfill's job (`catchup=False`).
+
+**Not started:** §6 Phases 4–7. No dbt models or dashboard exist yet.
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded.
 
@@ -247,6 +276,12 @@ Done:
 - **(Phase 2) The coverage gap is visible in pure metadata.** AE: 31 locations, 18 reference monitors, sensors spread across pollutants (pm10 21 / no2 17 / pm25 14). PK: 441 locations but only 5 reference monitors, 441 pm25 low-cost sensors, 6 pm10, and **zero no2 sensors** — the NO2 comparison is empirically one-sided with current OpenAQ coverage; the marts must surface this, not paper over it. Also AE's instrumentation is partly dormant: only 8/52 target sensors reported data on 2026-07-12.
 - **(Phase 2) Individual sensors can be persistently broken server-side.** The first live PK run aborted at sensor 15904590, which returns an instant HTTP 500 on every attempt (verified by direct probe — no rate-limit headers, not a throttling artifact). Retries cannot fix a server-side data bug, and one broken sensor out of 447 must not lose the rest of the fan-out. Fixed: per-sensor failures are isolated into `RunSummary.sensors_failed` and the CLI exits 1 on partial failure — landed data stays, but partial success is never silent. Auth errors (401/403) remain fatal for the whole run. The full PK run then found **30** such sensors — in contiguous id blocks (16034750–79, 16242897–915), likely newly-onboarded batches with a broken data backend — so Phase 3's DAG must treat nonzero `sensors_failed` as normal, not a reason to discard the run. Cost note: 5 retry attempts × exponential backoff ≈ 62s per broken sensor (~31 min of the 39-min PK run); Phase 3/5 should cut attempts for instant 5xxs or track known-bad sensors.
 - **(Phase 2) `meta.found` is not always an int** (the API can report `">1000"`), so pagination terminates on `len(results) < limit`, never on `found`.
+- **(Phase 3) Unconstrained pip on top of the Airflow image is a time bomb.** The Dockerfile installed `airflow/requirements.txt` without the official constraints file; pip pulled numpy 2.x against the base image's numpy-1.x-ABI pandas, so every BigQuery-operator import would have crashed at runtime. Caught by running the new DagBag tests in a clean constrained venv *before* any container ran. Rule: anything that installs on top of `apache/airflow:X` (Dockerfile, CI) applies `constraints-X` and keeps explicit pins agreeing with it (google provider 10.17.0, google-cloud-bigquery 3.21.0, numpy 1.26.4).
+- **(Phase 3) Airflow `template_ext` treats *any* templated string ending in `.json`/`.sql` as a template FILE to load.** The load's `sourceUris` ending in `/*.json` failed at render time with `TemplateNotFound` on the URI itself. Fix: wildcard ends at `/*` (equivalent for our layout, and it usefully loads `locations.json` too — see §5). Applies to every string inside an operator's `template_fields`, not just ones containing `{{ }}`.
+- **(Phase 3) Dynamic mapping can only expand over a task's default `return_value` XCom** — `.expand()` over a `multiple_outputs` key fails at parse time. `prepare_country_run` returns the bare sensor-spec list. Also: the google provider validates `bigquery://` Dataset URIs as full `project/dataset/table`.
+- **(Phase 3) BQ job location, part two.** The pre-Phase-2 lesson (jobs run in exactly one location = the dataset's region) resurfaced twice: `BigQueryHook.get_records()` demands an explicit `location`, and even with it the hook's DB-API layer created the job in one location and polled another (404). `reconcile_counts` uses the hook's native client with `query_and_wait` and `BIGQUERY_LOCATION` (env, default `us-central1`) instead.
+- **(Phase 3) `airflow-init` must run as root when AIRFLOW_UID is an arbitrary host uid.** The init service overrides the image entrypoint with plain bash, bypassing the arbitrary-uid passwd handling, so the CLI dies with `getpwuid(): uid not found`. Upstream's reference compose runs init as `0:0` for the same reason; long-running services stay `${AIRFLOW_UID}:0`. Related: the `logs/` bind mount needed a one-time chown (owned by uid 50000 from a pre-Phase-3 stack-up under the old default).
+- **(Phase 3) The PK broken-sensor population grew: 35 failed sensors on ds=2026-07-14** (superset pattern of the 30 seen in Phase 2, still contiguous id blocks). Validates the catch+threshold failure model — 7.8% < 20% keeps the run green while the summary logs every failed id. Known-bad tracking still Phase 5.
 - **(2026-07-12 audit) dbt `+schema:` is a suffix, not a target.** With the default `generate_schema_name` macro, `+schema: dbt` on top of a profile `dataset: openaq_dbt` yields `openaq_dbt_dbt`. The least-privilege SA (dataset-scoped `dataEditor`, no dataset-create permission) would have turned this into a hard permission failure in Phase 4 — removed the overrides; the profile's dataset is the single source of the target.
 
 ---
@@ -279,4 +314,5 @@ Done:
 | 1.3 | 2026-07-12 | Phase 1 complete (`feat/phase-1-terraform`). All GCP via Terraform (G11): raw bucket, two datasets, least-privilege SA, remote tfstate in GCS; all three exit criteria verified (idempotent apply, SA smoke test, remote state). Lock file now committed; `terraform` CI job added. §7.5 additions: userland CLI installs (no sudo), ADC vs CLI auth split, backend-block variable limitation, pre-existing GCP project. |
 | 1.4 | 2026-07-12 | Pre-Phase-2 audit + hygiene PR (Phase 1 merged as PR #4). Fixed two latent dbt config bugs (profiles `location: US` vs us-central1 datasets; `+schema: dbt` → `openaq_dbt_dbt` doubling); refreshed stale root and docs READMEs; recorded `terraform` as a verified required check. Python drift resolved: `.venv` rebuilt on uv-managed CPython 3.12.13. OpenAQ key re-probed: still 401 — hard Phase 2 blocker until regenerated. |
 | 1.5 | 2026-07-13 | Phase 2 complete (`feat/phase-2-ingestion`): tested v3 client (`ingestion/openaq/`), G2 fan-out to GCS raw NDJSON, 22 mocked unit tests, live AE+PK runs verified all three exit criteria. Per-sensor fault isolation added after a persistently-500ing PK sensor (15904590) aborted the first live run. §5 raw layout verified + extended with `locations.json` (measurement payloads carry no ids). §7.5: metadata-visible coverage gap (PK has zero no2 sensors; AE instrumentation partly dormant); `meta.found` can be a string. §8: backfill budget quantified — day-by-day PK backfill is 45h, Phase 5 must use wide datetime windows. §9: countries_id AE=59/PK=109. |
+| 1.7 | 2026-07-15 | Phase 3 complete (`feat/phase-3-orchestration`): `openaq_ingest` DAG — dynamic mapping over sensors behind an API pool (G3), catch+threshold failure model (20%), external-table load into `raw_measurements` with `_FILE_NAME`→`source_uri` (G1/G4), Dataset emitted (G9), reconcile task. All four exit criteria verified live (ds=2026-07-14: 3,816 measurements reconciled; rerun appended an identical second batch). `raw_measurements` schema flips to VERIFIED; `locations.json` pages land in the raw table by design. New `dag-validate` CI job; image/CI installs now constraint-pinned after a live numpy-ABI break. §7.5: template_ext footgun, expand-over-keyed-XCom, BQ job-location part two, airflow-init as root, PK broken sensors now 35. |
 | 1.6 | 2026-07-14 | Pre-Phase-3 audit + hygiene PR. Verified CI, branch protection, secrets hygiene, and live-GCP-vs-Terraform alignment ahead of Phase 3. Scoped this doc to architecture and state: split session-specific working notes out of the versioned doc, trimmed §0 to maintenance rules, removed the former §9 (sections renumbered), and aligned `docs/architecture.md` wording. |
