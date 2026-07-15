@@ -35,18 +35,23 @@ class OpenAQClient:
         base_url: str,
         session: requests.Session | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        max_attempts: int = MAX_ATTEMPTS,
     ):
         self._session = session or requests.Session()
         self._session.headers["X-API-Key"] = api_key
         self._base_url = base_url.rstrip("/")
         self._sleep = sleep
+        # Tunable because retrying a *persistently* broken sensor is pure cost:
+        # the Phase 3 DAG uses 2 attempts (~30 known-bad PK sensors × 62s of
+        # backoff at 5 attempts was ~80% of a country run's wall time).
+        self._max_attempts = max_attempts
 
     def get(self, path: str, params: dict | None = None) -> requests.Response:
         """GET with bounded retries: 429 waits for the rate window, 5xx and
         connection errors back off exponentially, 401/403 fail fast."""
         url = f"{self._base_url}{path}"
         last_error: Exception | None = None
-        for attempt in range(MAX_ATTEMPTS):
+        for attempt in range(self._max_attempts):
             try:
                 response = self._session.get(url, params=params, timeout=DEFAULT_TIMEOUT_SECONDS)
             except requests.RequestException as exc:
@@ -79,7 +84,9 @@ class OpenAQClient:
             self._respect_rate_limit(response)
             return response
 
-        raise RuntimeError(f"GET {path} failed after {MAX_ATTEMPTS} attempts") from last_error
+        raise RuntimeError(
+            f"GET {path} failed after {self._max_attempts} attempts"
+        ) from last_error
 
     def paginate(self, path: str, params: dict | None = None) -> Iterator[requests.Response]:
         """Yield one Response per page until a short page signals the end.
