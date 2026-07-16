@@ -113,6 +113,13 @@ def prepare_country_run(country_code: str) -> list[dict]:
     )
     location_pages = [r.json() for r in location_responses]
     sensors = extract_target_sensors(location_pages)
+    if not sensors:
+        # An empty .expand() list is marked skipped, not failed, and the skip
+        # cascades downstream — a zero-sensor country must be loud instead.
+        raise RuntimeError(
+            f"{country_code}: no target sensors found in the locations "
+            "inventory — anomalous for an onboarded country, investigate"
+        )
     n_locations = sum(len(p.get("results", [])) for p in location_pages)
     logger.info(
         "%s (countries_id=%s): %d locations, %d target sensors",

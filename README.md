@@ -32,7 +32,7 @@ Phases 5–7 (backfill, serving, polish) not yet started — see
 ├── ingestion/      OpenAQ v3 client (fan-out to GCS raw) + WHO threshold constants
 ├── infra/          Terraform IaC for GCP (bucket, datasets, service account)
 ├── scripts/        Dev utility scripts (bootstrap)
-├── tests/          Pytest suite (unit now, integration in Phase 5)
+├── tests/          Pytest suite (unit + DAG integrity; integration in Phase 5)
 ├── docs/           PROJECT_CONTEXT.md (source of truth) + architecture overview
 └── looker/         Looker Studio exports; lands in Phase 6
 ```
@@ -43,8 +43,12 @@ Phases 5–7 (backfill, serving, polish) not yet started — see
 bash scripts/bootstrap.sh     # checks prerequisites, creates .env from template
 # fill in the placeholder values in .env
 make up                       # start Airflow at http://localhost:8080
-make lint && make test        # ruff + pytest
+make lint && make test        # ruff + pytest (unit suite)
+make dag-test                 # DAG import check inside the Airflow container
 ```
+
+CI runs five checks on every PR (`lint`, `dbt-parse`, `pytest`, `terraform`,
+`dag-validate`); all are required by branch protection on `main`.
 
 GCP resources are provisioned exclusively via Terraform (`infra/`) — no
 script creates cloud resources.

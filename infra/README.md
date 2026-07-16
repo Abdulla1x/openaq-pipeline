@@ -17,8 +17,9 @@ infra/
 └── .terraform.lock.hcl       Committed — pins exact provider versions
 ```
 
-Tables are deliberately not managed here: the raw schema is asserted until real
-data lands (Phase 2/3), and dbt owns its own relations.
+Tables are deliberately not managed here: `raw_measurements` is created by the
+ingest DAG (`CREATE TABLE IF NOT EXISTS`; schema verified live in Phase 3), and
+dbt owns its own relations.
 
 ## One-time bootstrap (before first `terraform init`)
 
@@ -58,4 +59,5 @@ gcloud iam service-accounts keys create ~/gcp-keys/openaq-pipeline-key.json \
 ```
 
 Keep the key outside the repo (all `*-key.json` patterns are gitignored
-regardless). Wiring it into docker-compose is a Phase 2/3 decision.
+regardless). docker-compose bind-mounts it read-only into the Airflow
+containers via the `GCP_KEY_FILE` env var (wired in Phase 3).
