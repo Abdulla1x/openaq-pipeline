@@ -57,6 +57,7 @@ gcp_keyfile.json
 
 # ── Local working notes — private session context, never committed ───────────
 CLAUDE.local.md
+.claude/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

@@ -16,7 +16,10 @@ echo "✓ Required tools found (docker, git, python3)"
 if [ ! -f .env ]; then
   cp .env.example .env
   echo "✓ Created .env from .env.example"
-  echo "  Fill in: GCP_PROJECT_ID, GCS_BUCKET_NAME, OPENAQ_API_KEY, GOOGLE_APPLICATION_CREDENTIALS"
+  echo "  Fill in: GCP_PROJECT_ID, GCS_BUCKET_NAME, OPENAQ_API_KEY, GOOGLE_APPLICATION_CREDENTIALS,"
+  echo "           GCP_KEY_FILE (host path to the SA key — docker compose refuses to start without it)"
+  echo "  Generate FERNET_KEY (compose's fallback is not a valid key):"
+  echo "    python3 -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
 else
   echo "✓ .env already exists — skipping"
 fi
