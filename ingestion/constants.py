@@ -4,9 +4,11 @@ WHO 2021 Global Air Quality Guideline thresholds.
 Source: WHO 2021 Global Air Quality Guidelines (PM2.5, PM10, NO2, SO2, O3, CO).
 See PROJECT_CONTEXT.md §4/G5 for the full table and rationale.
 
-NOTE: these are the source-of-truth values for Phase 0-3. From Phase 4 onward,
-the same values are loaded into BigQuery as a dbt seed (who_thresholds) so dbt
-models reference the seed, not this file. Keep both in sync if either changes.
+NOTE: since Phase 4 the dbt seed (dbt/seeds/who_thresholds.csv) is the source
+of truth that models read; this module remains for Python-side use. The two
+are kept in sync by tests/unit/test_who_seed_sync.py, which also pins the O3
+key mapping: this dict's "24h"/"annual" shorthand for O3 corresponds to the
+seed's explicit 8h/peak_season periods.
 """
 
 WHO_THRESHOLDS_UGM3 = {
