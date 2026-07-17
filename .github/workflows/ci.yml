@@ -19,9 +19,11 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Ruff check
         run: ruff check .
+      # Blocking since Phase 4 (deliberate decision, 2026-07-17): SQL style
+      # violations fail the job, same as ruff. Dialect/templater come from
+      # the repo-root .sqlfluff config.
       - name: SQLFluff lint
-        run: sqlfluff lint dbt/models --dialect bigquery
-        continue-on-error: true
+        run: sqlfluff lint dbt/models
 
   dbt-parse:
     name: dbt-parse

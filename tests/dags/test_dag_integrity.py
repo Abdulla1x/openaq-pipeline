@@ -5,7 +5,6 @@ Airflow container (`make dag-test`) — and skips elsewhere, so the fast
 unit-test environments don't need the airflow dependency tree.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -34,10 +33,8 @@ EXPECTED_TASK_IDS = {
 
 @pytest.fixture(scope="module")
 def ingest_dag():
-    # The DAG reads these at parse time; set before DagBag imports the module.
-    os.environ.setdefault("GCP_PROJECT_ID", "test-project")
-    os.environ.setdefault("GCS_BUCKET_NAME", "test-bucket")
-    os.environ.setdefault("BIGQUERY_RAW_DATASET", "openaq_raw")
+    # Parse-time env vars and sys.path come from conftest.py (shared with
+    # test_dag_transform, and needed before DagBag imports any DAG module).
     dagbag = DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
     assert dagbag.import_errors == {}, f"DAG import errors: {dagbag.import_errors}"
     # dagbag.dags, not get_dag(): the latter consults the metadata DB, which
