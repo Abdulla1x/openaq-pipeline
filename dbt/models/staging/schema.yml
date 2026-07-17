@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: stg_measurements
+    description: >
+      One row per sensor measurement (hourly 'raw' period), parsed from
+      verbatim API pages (G1) and deduped across append batches (G4).
+      Identity (sensor_id, country_code) is parsed from source_uri.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [sensor_id, period_start_utc]
+    columns:
+      - name: sensor_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_sensors')
+              field: sensor_id
+      - name: country_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [AE, PK]
+      - name: parameter
+        description: >
+          Only the ingestion targets (TARGET_PARAMETERS) can appear; widening
+          that frozenset must consciously widen this test too.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [pm25, pm10, no2]
+      - name: measurement_value
+        data_tests:
+          - not_null
+      - name: period_start_utc
+        data_tests:
+          - not_null
+
+  - name: stg_locations
+    description: One row per monitoring station, latest ingested metadata.
+    columns:
+      - name: location_id
+        data_tests: [unique, not_null]
+      - name: country_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [AE, PK]
+      - name: is_reference_monitor
+        data_tests: [not_null]
+
+  - name: stg_sensors
+    description: One row per sensor — the sensor -> location bridge.
+    columns:
+      - name: sensor_id
+        data_tests: [unique, not_null]
+      - name: location_id
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_locations')
+              field: location_id
+      - name: parameter
+        data_tests: [not_null]

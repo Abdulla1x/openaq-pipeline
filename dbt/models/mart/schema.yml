@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: mart_country_compare
+    description: >
+      UAE vs Pakistan daily comparison. Grain: (country_code, parameter,
+      measurement_date). 24h-threshold exceedance only (G6);
+      exceedance_rate = locations_exceeding / locations_comparable * 100,
+      denominators exposed (G8); completeness as columns (G7).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [country_code, parameter, measurement_date]
+    columns:
+      - name: country_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [AE, PK]
+      - name: parameter
+        data_tests: [not_null]
+      - name: measurement_date
+        data_tests: [not_null]
+      - name: locations_with_data
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: exceedance_rate
+        description: Null when no station-day had a matching 24h threshold.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+
+  - name: mart_annual_compare
+    description: >
+      Annual means vs WHO annual guidelines (G6: separate annual grain).
+      Grain: (country_code, parameter, measurement_year). Until the Phase 5
+      backfill, a year contains only the ingested days — days_with_data says
+      how many.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [country_code, parameter, measurement_year]
+    columns:
+      - name: country_code
+        data_tests: [not_null]
+      - name: parameter
+        data_tests: [not_null]
+      - name: measurement_year
+        data_tests: [not_null]
+      - name: annual_mean
+        data_tests: [not_null]
+      - name: days_with_data
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1

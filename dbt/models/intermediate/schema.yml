@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: int_daily_aqi
+    description: >
+      Station-day aggregates (G7: completeness columns, never filters).
+      Grain: (location_id, parameter, measurement_date).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [location_id, parameter, measurement_date]
+    columns:
+      - name: location_id
+        data_tests: [not_null]
+      - name: parameter
+        data_tests: [not_null]
+      - name: measurement_date
+        data_tests: [not_null]
+      - name: daily_avg
+        data_tests: [not_null]
+      - name: reading_count
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: hours_covered
+        description: Distinct UTC hours with at least one reading (1-24).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 24
