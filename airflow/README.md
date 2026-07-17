@@ -7,7 +7,10 @@ Airflow Docker configuration and DAGs for pipeline orchestration.
 ```
 airflow/
 ├── dags/
-│   └── openaq_ingest.py  Daily raw-ingestion DAG (Phase 3)
+│   ├── openaq_ingest.py     Daily raw-ingestion DAG (Phase 3)
+│   ├── openaq_transform.py  Cosmos dbt DAG, Dataset-triggered (Phase 4)
+│   └── openaq_datasets.py   Shared Dataset contract (non-DAG module — a DAG
+│                            file must never import another DAG file)
 ├── plugins/operators/    Empty — no custom operators needed so far
 ├── Dockerfile            Airflow 2.9.1 image + project deps, installed under
 │                         the official constraints for reproducibility
@@ -31,16 +34,20 @@ Daily at 02:00 UTC, for the previous (completed) UTC day; per country (AE, PK):
 4. `ensure_raw_table` + `load_raw_to_bq` — appends verbatim page bodies into
    `openaq_raw.raw_measurements (raw_payload JSON, ingested_at, source_uri)`
    via a temp external table; `_FILE_NAME` becomes `source_uri` (G1/G4).
-   Emits the `bigquery://…/raw_measurements` **Dataset** that will schedule
-   the Phase 4 transform DAG (G9).
+   Emits the `bigquery://…/raw_measurements` **Dataset** that schedules the
+   transform DAG (G9).
 5. `reconcile_counts` — asserts API-run measurement totals equal what the
    latest batch landed in BigQuery.
 
-DAG structure is tested by `tests/dags/test_dag_integrity.py` (the
-`dag-validate` CI job); `make dag-test` runs a quick import check inside the
-container.
+## The transform DAG (`openaq_transform`)
 
-## Planned (Phase 4)
+Runs whenever the ingest load emits the raw-measurements Dataset (data-aware
+scheduling, no TriggerDagRunOperator — G9). astronomer-cosmos renders the dbt
+project as one Airflow task per node — seed, each model, each model's tests
+(`TestBehavior.AFTER_EACH`) — so a failing model retries alone and its tests
+gate downstream models. Profile/project paths come from `DBT_PROJECT_DIR` /
+`DBT_PROFILES_DIR` (the `./dbt` volume mount).
 
-A transform DAG scheduled on the raw-measurements Dataset, running dbt via
-astronomer-cosmos (G9).
+DAG structure is tested by `tests/dags/test_dag_integrity.py` and
+`test_dag_transform.py` (the `dag-validate` CI job); `make dag-test` runs a
+quick import check inside the container.

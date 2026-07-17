@@ -8,21 +8,25 @@ Pytest test suite.
 tests/
 ├── unit/
 │   ├── test_who_constants.py   Guards the WHO 2021 threshold values (G5)
+│   ├── test_who_seed_sync.py   dbt seed ↔ constants.py sync (incl. the O3 key mapping)
 │   ├── test_client.py          OpenAQ client: auth, throttling, retries, pagination (mocked API)
 │   ├── test_ingest.py          Fan-out: country resolution, sensor extraction, fault isolation
 │   └── test_gcs.py             Raw-zone writer: object naming, verbatim NDJSON contract
 ├── dags/
-│   └── test_dag_integrity.py   DagBag import + structure of the openaq_ingest DAG
+│   ├── conftest.py             Parse-time env + DAGS_FOLDER on sys.path (as production does)
+│   ├── test_dag_integrity.py   DagBag import + structure of the openaq_ingest DAG
+│   └── test_dag_transform.py   Cosmos per-node tasks + the Dataset schedule contract (G9)
 └── integration/                Empty until Phase 5
 ```
 
 Import paths are configured via `pythonpath = ["."]` in `pyproject.toml`
-(`[tool.pytest.ini_options]`) — no conftest.py or editable install needed.
+(`[tool.pytest.ini_options]`); `tests/dags/conftest.py` additionally sets the
+parse-time environment the DAG modules and the cosmos render need.
 
 ## Running tests
 
 ```bash
-pytest tests/unit/ -v    # 26 unit tests; fast, no credentials needed (also: make test)
+pytest tests/unit/ -v    # 27 unit tests; fast, no credentials needed (also: make test)
 make dag-test            # quick DAG import check inside the Airflow container
 ```
 

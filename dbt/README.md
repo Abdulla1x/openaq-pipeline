@@ -1,7 +1,9 @@
 # dbt/
 
-dbt transformation project with a three-layer model architecture targeting
-BigQuery. Models land in Phase 4; today only the project config exists.
+dbt transformation project (Phase 4) targeting BigQuery. In Airflow it runs
+via astronomer-cosmos as one task per dbt node (`openaq_transform` DAG,
+scheduled on the raw_measurements Dataset — G9); locally it runs with plain
+`dbt build` given the env vars below.
 
 ## Connection profile
 
@@ -11,22 +13,33 @@ references, no secrets (guardrail G10). Set `GCP_PROJECT_ID`,
 (or `.env`) and dbt resolves them at runtime. Do not create a local copy with
 real values inside the repo.
 
-## Layer responsibilities (Phase 4)
+## Model layers
 
-| Layer | Directory | Purpose |
+| Layer | Models | Purpose |
 |---|---|---|
-| Staging | `models/staging/` | Parse raw JSON, dedup, standardize units (views) |
-| Intermediate | `models/intermediate/` | Daily aggregates + completeness dimensions (`reading_count`, `hours_covered` — exposed as columns, never a silent filter, per G7) |
-| Mart | `models/mart/` | 24h exceedance vs WHO thresholds, plus a separate annual-mean model (grain discipline, G6) |
+| Staging (views) | `stg_measurements`, `stg_locations`, `stg_sensors` | Parse raw JSON pages (G1), dedup append batches (G4). Measurement payloads carry no ids — sensor/country identity is parsed from `source_uri`; the sensor→location bridge comes from the landed locations inventory |
+| Intermediate (table) | `int_daily_aqi` | Station-day aggregates with completeness as columns (`reading_count`, `hours_covered`) — never a silent filter (G7) |
+| Mart (tables) | `mart_country_compare`, `mart_annual_compare` | Daily vs 24h thresholds and annual vs annual thresholds, kept in separate models (grain discipline, G6); exceedance rates carry explicit denominators (G8) |
+
+## Seed
+
+`seeds/who_thresholds.csv` — WHO 2021 guideline values
+(`pollutant, averaging_period, threshold_value, unit`), the source of truth
+for threshold joins (G5). `tests/unit/test_who_seed_sync.py` keeps it in
+sync with `ingestion/constants.py`.
 
 ## Contents (current)
 
 ```
 dbt/
-├── models/           staging/ intermediate/ mart/ — empty until Phase 4
-├── seeds/            who_thresholds seed lands in Phase 4 (G5)
+├── models/            staging/ intermediate/ mart/ + schema.yml tests per layer
+├── seeds/             who_thresholds.csv + schema.yml
 ├── macros/ tests/ analyses/   empty until needed
-├── dbt_project.yml   Project config: name, paths, materializations
-├── packages.yml      dbt package dependencies (dbt_utils)
-└── profiles.yml      Committed BigQuery profile using env_var() only
+├── dbt_project.yml    Project config: name, paths, materializations
+├── packages.yml       dbt package dependencies (dbt_utils)
+├── package-lock.yml   Pinned package versions (committed, like any lockfile)
+└── profiles.yml       Committed BigQuery profile using env_var() only
 ```
+
+SQL style is enforced by SQLFluff (repo-root `.sqlfluff`; blocking in CI
+since Phase 4).
