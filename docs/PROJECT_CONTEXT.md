@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.8 · **Last updated:** 2026-07-16 · **Current phase:** Phase 4 (not started)
+> **Version:** 1.9 · **Last updated:** 2026-07-17 · **Current phase:** Phase 5 (not started)
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo.
 
 ---
@@ -31,7 +31,7 @@ Maintenance rules for this file:
 |---|---|---|
 | Orchestration | Apache Airflow | 2.9.1, **LocalExecutor**, Docker |
 | Metadata DB | PostgreSQL | 15 (Airflow-internal) |
-| dbt-in-Airflow | **astronomer-cosmos** | renders dbt models as model-level Airflow tasks |
+| dbt-in-Airflow | **astronomer-cosmos** | 1.15.0 — one Airflow task per dbt node (model run + test pairs) |
 | Data lake | GCP Cloud Storage | raw JSON landing |
 | Warehouse | GCP BigQuery | free tier (10GB storage / 1TB query) |
 | Transformation | dbt-core + dbt-bigquery | 1.8.3 / 1.8.2 |
@@ -115,13 +115,20 @@ Store as a seed with columns `(pollutant, averaging_period, threshold_value, uni
 openaq_raw
   └── raw_measurements        raw_payload JSON, ingested_at TIMESTAMP, source_uri STRING
                               partitioned by DATE(ingested_at)   [VERIFIED 2026-07-15, live load]
-openaq_dbt
-  ├── stg_measurements        view  — parse JSON, dedup, unit-standardize
-  ├── int_daily_aqi           table — daily_avg/max/min, reading_count, hours_covered
-  ├── mart_country_compare    table — 24h exceedance flags, exceedance_rate, rolling_7d_avg
-  └── mart_annual_compare     table — annual-mean vs annual thresholds
+openaq_dbt                    [VERIFIED 2026-07-17, dbt build against live BQ — 58/58 green]
+  ├── stg_measurements        view  — UNNEST pages, parse ids from source_uri, dedup (G4)
+  ├── stg_locations           view  — station inventory from locations.json pages
+  ├── stg_sensors             view  — sensor→location bridge (embedded sensors[] arrays)
+  ├── int_daily_aqi           table — grain (location, parameter, day): daily_avg/min/max,
+  │                                   reading_count, hours_covered (G7)
+  ├── mart_country_compare    table — grain (country, parameter, day): 24h exceedance,
+  │                                   explicit denominators (G8), rolling_7d_avg
+  └── mart_annual_compare     table — grain (country, parameter, year) vs annual thresholds (G6)
 seed: who_thresholds          (pollutant, averaging_period, threshold_value, unit)
 ```
+The two extra staging views (vs the original single-view plan) exist because
+measurement payloads carry no ids (§7.5): identity and the sensor→location
+join both come from the landed locations pages.
 GCS **[VERIFIED 2026-07-13, real data landed]**:
 ```
 gs://{bucket}/raw/openaq/{country}/{YYYY-MM-DD}/{sensor_id}.json   per-sensor measurements
@@ -236,7 +243,25 @@ Done:
 
 **Deferred to Phase 5 (recorded, deliberate):** G4 rolling lookback (re-fetch last N days) and known-bad-sensor tracking — both belong with the wide-window backfill mechanics. Scheduled runs only fire while the compose stack is up; missed days are backfill's job (`catchup=False`).
 
-**Not started:** §6 Phases 4–7. No dbt models or dashboard exist yet.
+**Phase 4 — complete (`feat/phase-4-transformation`, 2026-07-17; all four exit criteria verified live).**
+
+Done:
+- `astronomer-cosmos==1.15.0` added to `airflow/requirements.txt` — verified to resolve cleanly under constraints-2.9.1 with all existing pins (`pip check`, 256 packages).
+- `dbt/seeds/who_thresholds.csv` (G5) with explicit `averaging_period` values — the O3 labeling debt (§7.5) paid: `8h`/`peak_season`, not the constants.py shorthand. `tests/unit/test_who_seed_sync.py` enforces the seed↔`constants.py` sync that was previously a comment-only contract.
+- Models per §5: three staging views (G1 parse + G4 dedup on `(sensor_id, period_start_utc)` by latest `ingested_at`), `int_daily_aqi` (G7 completeness columns), `mart_country_compare` (G6 24h-only join on pollutant **and unit**; G8 explicit denominators; a station-day with no matching threshold keeps a null flag and drops out of the denominator, never out of the table), `mart_annual_compare` (G6 annual grain). 51 dbt data tests across layers.
+- `airflow/dags/openaq_transform.py`: cosmos `DbtDag` scheduled on the raw_measurements Dataset (G9). The Dataset moved to a shared non-DAG module `openaq_datasets.py` imported by both DAGs — see §7.5 for why a DAG file must not import another DAG file.
+- Local `dbt build` against live BigQuery: **58/58 green** (1 seed, 6 models, 51 tests). G4 dedup verified against the duplicated 2026-07-14 double batch: `stg_measurements` = 3,816 = exactly half the raw records and equal to Phase 3's reconciled count.
+- Hand-verified exceedance flags by recomputing station-day means straight from raw JSON: location 6135452 (PK pm25 avg 120.9 µg/m³ → exceeded) and boundary case 6135285 (avg exactly 15.0 → **not** exceeded; the guideline is "should not exceed", so strict `>` is correct).
+- Tests/CI: `tests/dags/test_dag_transform.py` (14 cosmos tasks, Dataset-trigger == ingest outlet, tests gate downstream models) + shared `tests/dags/conftest.py`; SQLFluff now **blocking** in CI (deliberate Phase 4 decision per §7.5, `.sqlfluff` config committed, ST06 excluded deliberately); 27 unit tests + 9 DAG tests green.
+- First analytical signal (single day, 2026-07-14, pm25 only — the only parameter with data that day): AE 8/8 reporting stations exceeded the WHO 24h guideline (country mean 69.7 µg/m³), PK 169/180 (93.9%, mean 35.3 µg/m³).
+
+**Phase 4 exit criteria — verified (live, 2026-07-17):**
+- [x] dbt run + test green — locally against live BQ (58/58) and again via the DAG (all cosmos tasks green)
+- [x] 1 exceedance flag hand-verified (two, including a threshold-boundary case)
+- [x] Cosmos per-model tasks — 14 tasks (run+test per node), asserted by DAG tests and observed live
+- [x] transform DAG triggers off the Dataset — the scheduled ingest run (ds=2026-07-16) emitted the Dataset event and `dataset_triggered__2026-07-17T08:51:53` ran to success (14/14 tasks, 66s); marts absorbed the new day (4 rows, rolling_7d_avg hand-checked). The trigger was delayed ~21 min by a root-owned scheduler-log dir killing DAG serialization — see §7.5; the queued event survived and fired the instant parsing recovered, which is itself a nice property of the Dataset queue.
+
+**Not started:** §6 Phases 5–7. No backfill, Elementary, or dashboard yet.
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded.
 
@@ -285,9 +310,13 @@ Done:
 - **(Phase 3) Airflow `template_ext` treats *any* templated string ending in `.json`/`.sql` as a template FILE to load.** The load's `sourceUris` ending in `/*.json` failed at render time with `TemplateNotFound` on the URI itself. Fix: wildcard ends at `/*` (equivalent for our layout, and it usefully loads `locations.json` too — see §5). Applies to every string inside an operator's `template_fields`, not just ones containing `{{ }}`.
 - **(Phase 3) Dynamic mapping can only expand over a task's default `return_value` XCom** — `.expand()` over a `multiple_outputs` key fails at parse time. `prepare_country_run` returns the bare sensor-spec list. Also: the google provider validates `bigquery://` Dataset URIs as full `project/dataset/table`.
 - **(Phase 3) BQ job location, part two.** The pre-Phase-2 lesson (jobs run in exactly one location = the dataset's region) resurfaced twice: `BigQueryHook.get_records()` demands an explicit `location`, and even with it the hook's DB-API layer created the job in one location and polled another (404). `reconcile_counts` uses the hook's native client with `query_and_wait` and `BIGQUERY_LOCATION` (env, default `us-central1`) instead.
+- **(Phase 4) The root `airflow-init` poisons the scheduler-log date dir — and dead processors silently kill Dataset scheduling.** Sequel to the bullet below: init's CLI calls initialize file-processor logging and create `logs/scheduler/<today>/` root-owned (755) before the scheduler starts. Every DAG-file processor child then dies at bootstrap with `PermissionError`, so DAGs are never (re)serialized — the live symptom was a Dataset event sitting queued in `dataset_dag_run_queue` for 21 minutes with no run created, while the ingest DAG (already serialized) ran normally. Fixed in compose: init chowns `/opt/airflow/logs` back to `AIRFLOW_UID` as its last step. Debug path worth remembering: `dataset_event` (event recorded?) → `dataset_dag_run_queue` (queued for the consumer?) → `serialized_dag.last_updated` (is the consumer's serialization fresh?). The queued event fired the moment parsing recovered.
 - **(Phase 3) `airflow-init` must run as root when AIRFLOW_UID is an arbitrary host uid.** The init service overrides the image entrypoint with plain bash, bypassing the arbitrary-uid passwd handling, so the CLI dies with `getpwuid(): uid not found`. Upstream's reference compose runs init as `0:0` for the same reason; long-running services stay `${AIRFLOW_UID}:0`. Related: the `logs/` bind mount needed a one-time chown (owned by uid 50000 from a pre-Phase-3 stack-up under the old default).
 - **(Phase 3) The PK broken-sensor population grew: 35 failed sensors on ds=2026-07-14** (superset pattern of the 30 seen in Phase 2, still contiguous id blocks). Validates the catch+threshold failure model — 7.8% < 20% keeps the run green while the summary logs every failed id. Known-bad tracking still Phase 5.
 - **(2026-07-16 audit) An empty dynamic-mapping expansion is skipped, not failed.** `.expand()` over an empty list marks the mapped task (and, by default trigger rules, its downstream) skipped — a country resolving to zero target sensors would silently skip toward the load path instead of erroring. Latent only (AE and PK always have pm25/pm10/no2 sensors), but `prepare_country_run` now raises on an empty sensor list: a zero-sensor country-day is anomalous and must be loud, especially before any new country is onboarded.
+- **(Phase 4) A DAG file must never import another DAG file.** The transform DAG first imported its Dataset from `openaq_ingest`; executing that module inside the transform file's parse auto-registered the ingest DAG under *both* files (`AirflowDagDuplicatedIdException` in the DagBag tests; in production, two files fighting over one dag_id). Shared contracts (the Dataset URI) live in a non-DAG module (`openaq_datasets.py`). Related: production Airflow puts DAGS_FOLDER on `sys.path` (module-management docs), which is what makes such sibling imports work at all — standalone DagBag tests must replicate it (done in `tests/dags/conftest.py`).
+- **(Phase 4) The cosmos dbt-ls cache needs the Airflow metadata DB at parse time.** Cosmos persists its render cache to an Airflow Variable; in DB-less environments (DagBag tests, the dag-validate CI job) DAG import dies with `no such table: variable`. Disabled there via `AIRFLOW__COSMOS__ENABLE_CACHE=false` (set in `tests/dags/conftest.py`); the real deployment keeps the cache.
+- **(Phase 4) SQLFluff decision (closes the Phase 0 note above): blocking.** `continue-on-error` removed from the CI lint step — SQL style failures now block merges like ruff. `.sqlfluff` uses the jinja templater with dbt builtins (the dbt templater would need credentials in CI) and deliberately excludes ST06 (column order: it would force audit columns above entity ids). RF04 caught `value` as a keyword identifier → column is `measurement_value`.
 - **(2026-07-12 audit) dbt `+schema:` is a suffix, not a target.** With the default `generate_schema_name` macro, `+schema: dbt` on top of a profile `dataset: openaq_dbt` yields `openaq_dbt_dbt`. The least-privilege SA (dataset-scoped `dataEditor`, no dataset-create permission) would have turned this into a hard permission failure in Phase 4 — removed the overrides; the profile's dataset is the single source of the target.
 
 ---
@@ -322,4 +351,5 @@ Done:
 | 1.5 | 2026-07-13 | Phase 2 complete (`feat/phase-2-ingestion`): tested v3 client (`ingestion/openaq/`), G2 fan-out to GCS raw NDJSON, 22 mocked unit tests, live AE+PK runs verified all three exit criteria. Per-sensor fault isolation added after a persistently-500ing PK sensor (15904590) aborted the first live run. §5 raw layout verified + extended with `locations.json` (measurement payloads carry no ids). §7.5: metadata-visible coverage gap (PK has zero no2 sensors; AE instrumentation partly dormant); `meta.found` can be a string. §8: backfill budget quantified — day-by-day PK backfill is 45h, Phase 5 must use wide datetime windows. §9: countries_id AE=59/PK=109. |
 | 1.6 | 2026-07-14 | Pre-Phase-3 audit + hygiene PR. Verified CI, branch protection, secrets hygiene, and live-GCP-vs-Terraform alignment ahead of Phase 3. Scoped this doc to architecture and state: split session-specific working notes out of the versioned doc, trimmed §0 to maintenance rules, removed the former §9 (sections renumbered), and aligned `docs/architecture.md` wording. |
 | 1.7 | 2026-07-15 | Phase 3 complete (`feat/phase-3-orchestration`): `openaq_ingest` DAG — dynamic mapping over sensors behind an API pool (G3), catch+threshold failure model (20%), external-table load into `raw_measurements` with `_FILE_NAME`→`source_uri` (G1/G4), Dataset emitted (G9), reconcile task. All four exit criteria verified live (ds=2026-07-14: 3,816 measurements reconciled; rerun appended an identical second batch). `raw_measurements` schema flips to VERIFIED; `locations.json` pages land in the raw table by design. New `dag-validate` CI job; image/CI installs now constraint-pinned after a live numpy-ABI break. §7.5: template_ext footgun, expand-over-keyed-XCom, BQ job-location part two, airflow-init as root, PK broken sensors now 35. |
+| 1.9 | 2026-07-17 | Phase 4 complete (`feat/phase-4-transformation`): who_thresholds seed (O3 labeling debt paid, sync test), 3 staging views + int_daily_aqi + two marts (G1/G4/G6/G7/G8) with 51 dbt tests, cosmos 1.15.0 `DbtDag` scheduled on the raw_measurements Dataset via shared `openaq_datasets.py` (G9). All four exit criteria verified live: dbt 58/58 locally and 14/14 cosmos tasks in-DAG; dedup halves the duplicated 2026-07-14 batch exactly; two exceedance flags hand-verified from raw JSON (incl. a 15.0-boundary case); the ds=2026-07-16 ingest's Dataset event auto-triggered the transform run. SQLFluff now blocking. §7.5: DAG files must not import DAG files; cosmos cache needs the metadata DB; root airflow-init poisons the scheduler-log dir and silently blocks Dataset scheduling (compose fix: init chowns logs back). |
 | 1.8 | 2026-07-16 | Pre-Phase-4 audit + hygiene PR. Full sweep (code, git history, docs): no secrets anywhere in history or tree, all 31 tests current, guardrails hold, dbt/Terraform configs re-verified ready for Phase 4. Fixed: stale `tests/README.md` (still described the Phase 0 tree), §10 changelog row order (v1.6/v1.7 were swapped), §2 CI cell (now lists all five jobs), `bootstrap.sh` env-var list (`GCP_KEY_FILE` is hard-required by compose; `FERNET_KEY` generation hint), two stale `infra/README.md` lines, ignore rules hardened. New: empty-expansion guard in `prepare_country_run` — a country resolving to zero target sensors now fails loudly instead of skip-cascading toward the load. |

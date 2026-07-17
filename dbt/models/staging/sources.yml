@@ -1,0 +1,22 @@
+version: 2
+
+sources:
+  - name: openaq_raw
+    description: >
+      Raw landing dataset written by the openaq_ingest DAG. Rows are verbatim
+      OpenAQ v3 API *pages* (G1 schema-on-read), not measurements — one row
+      per NDJSON line, appended per load batch (G4). Identity rides on
+      source_uri: measurement payloads carry no sensor/location ids.
+    schema: "{{ env_var('BIGQUERY_RAW_DATASET', 'openaq_raw') }}"
+    tables:
+      - name: raw_measurements
+        description: >
+          raw_payload JSON (verbatim page body) + ingested_at (one value per
+          load batch; staging dedups on it) + source_uri
+          (gs://.../raw/openaq/{COUNTRY}/{YYYY-MM-DD}/{sensor_id|locations}.json).
+          Contains both per-sensor measurement pages and the locations.json
+          inventory pages — staging separates them by source_uri.
+        columns:
+          - name: raw_payload
+          - name: ingested_at
+          - name: source_uri

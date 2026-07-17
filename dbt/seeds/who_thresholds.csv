@@ -1,0 +1,11 @@
+pollutant,averaging_period,threshold_value,unit
+pm25,annual,5,µg/m³
+pm25,24h,15,µg/m³
+pm10,annual,15,µg/m³
+pm10,24h,45,µg/m³
+no2,annual,10,µg/m³
+no2,24h,25,µg/m³
+so2,24h,40,µg/m³
+o3,peak_season,60,µg/m³
+o3,8h,100,µg/m³
+co,24h,4,mg/m³

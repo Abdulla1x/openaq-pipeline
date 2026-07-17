@@ -22,3 +22,9 @@ numpy==1.26.4             # pandas in the base image is numpy-1.x ABI
 # ── dbt (BigQuery adapter) ────────────────────────────────────────────────────
 dbt-core==1.8.3
 dbt-bigquery==1.8.2
+
+# ── dbt-in-Airflow (per-model tasks, G9) ─────────────────────────────────────
+# Verified 2026-07-17: resolves under constraints-2.9.1 with everything above
+# (pip check clean; needs only openlineage-integration-common, pinned 1.13.1
+# by the constraint set).
+astronomer-cosmos==1.15.0

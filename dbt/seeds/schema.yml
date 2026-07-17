@@ -1,0 +1,44 @@
+version: 2
+
+seeds:
+  - name: who_thresholds
+    description: >
+      WHO 2021 Global Air Quality Guideline thresholds (G5). One row per
+      (pollutant, averaging_period). Unlike the Phase 0-3 shorthand in
+      ingestion/constants.py, averaging_period is explicit: O3 carries
+      8h and peak_season (not 24h/annual), CO is in mg/m³. A unit test
+      (tests/unit/test_who_seed_sync.py) keeps this file and constants.py
+      in sync.
+    config:
+      column_types:
+        pollutant: string
+        averaging_period: string
+        threshold_value: float64
+        unit: string
+    columns:
+      - name: pollutant
+        description: OpenAQ parameter name (lowercase).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [pm25, pm10, no2, so2, o3, co]
+      - name: averaging_period
+        description: >
+          Averaging period the guideline applies to. Only 24h thresholds may
+          be compared to daily aggregates (G6).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [annual, 24h, 8h, peak_season]
+      - name: threshold_value
+        data_tests:
+          - not_null
+      - name: unit
+        description: µg/m³ for all pollutants except CO (mg/m³).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [µg/m³, mg/m³]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [pollutant, averaging_period]

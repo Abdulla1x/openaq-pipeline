@@ -1,0 +1,25 @@
+# SQL lint for dbt/models. The jinja templater with dbt builtins (ref/source/
+# config stubs) is deliberate: the dbt templater would need a working profile
+# and credentials, which CI must not have.
+[sqlfluff]
+dialect = bigquery
+templater = jinja
+max_line_length = 100
+# ST06 (column order: calculations after simple refs) would force audit
+# columns like ingested_at above the entity's id — id-first reads better.
+exclude_rules = structure.column_order
+
+[sqlfluff:indentation]
+indented_ctes = False
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower

@@ -28,8 +28,8 @@ import logging
 import os
 
 import pendulum
+from openaq_datasets import RAW_MEASUREMENTS_DATASET
 
-from airflow.datasets import Dataset
 from airflow.decorators import dag, task, task_group
 from airflow.operators.python import get_current_context
 from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
@@ -57,12 +57,6 @@ BIGQUERY_RAW_DATASET = os.environ.get("BIGQUERY_RAW_DATASET", "openaq_raw")
 # (same lesson as the dbt profiles.yml fix in the pre-Phase-2 audit).
 BIGQUERY_LOCATION = os.environ.get("BIGQUERY_LOCATION", "us-central1")
 RAW_TABLE = f"{GCP_PROJECT_ID}.{BIGQUERY_RAW_DATASET}.raw_measurements"
-
-# The ingest→transform interface contract (G9). The google provider enforces
-# the full bigquery://project/dataset/table form for this URI scheme.
-RAW_MEASUREMENTS_DATASET = Dataset(
-    f"bigquery://{GCP_PROJECT_ID}/{BIGQUERY_RAW_DATASET}/raw_measurements"
-)
 
 ENSURE_RAW_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS `{RAW_TABLE}` (
