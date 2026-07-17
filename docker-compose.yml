@@ -76,6 +76,13 @@ services:
           --role Admin \
           --email admin@example.com
         airflow pools set openaq_api 4 "OpenAQ v3 rate-limit budget (60 req/min shared across mapped fetch tasks)"
+        # This service runs as root, and the airflow CLI calls above create
+        # today's scheduler-log date dir root-owned (755) as a side effect.
+        # On a fresh same-day stack-up that kills every DAG-file processor in
+        # the scheduler (uid AIRFLOW_UID) with PermissionError — DAGs are
+        # never (re)serialized and dataset-triggered runs never fire. Hand
+        # the tree back before the scheduler starts.
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs
     restart: "no"
 
   webserver:
