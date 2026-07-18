@@ -38,6 +38,13 @@ from openaq_datasets import RAW_MEASUREMENTS_DATASET
 from airflow.decorators import dag, task, task_group
 from airflow.operators.python import get_current_context
 from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from ingestion.openaq.bq_load import (
+    ensure_raw_table_sql,
+    external_table_definition,
+    load_sql,
+    measurement_count_sql,
+    raw_table_name,
+)
 from ingestion.openaq.client import OpenAQClient
 from ingestion.openaq.config import load_settings
 from ingestion.openaq.gcs import LOCATIONS_LEAF, RAW_PREFIX, make_raw_zone_writer
@@ -62,25 +69,10 @@ BIGQUERY_RAW_DATASET = os.environ.get("BIGQUERY_RAW_DATASET", "openaq_raw")
 # BQ jobs run in one location, which must equal the dataset's region exactly
 # (same lesson as the dbt profiles.yml fix in the pre-Phase-2 audit).
 BIGQUERY_LOCATION = os.environ.get("BIGQUERY_LOCATION", "us-central1")
-RAW_TABLE = f"{GCP_PROJECT_ID}.{BIGQUERY_RAW_DATASET}.raw_measurements"
-
-ENSURE_RAW_TABLE_SQL = f"""
-CREATE TABLE IF NOT EXISTS `{RAW_TABLE}` (
-  raw_payload JSON OPTIONS (description = 'Verbatim OpenAQ v3 API page body (G1: schema-on-read)'),
-  ingested_at TIMESTAMP OPTIONS (description = 'Load-batch timestamp; dbt dedups on it (G4)'),
-  source_uri STRING OPTIONS (description = 'GCS object path — carries sensor/country/day identity')
-)
-PARTITION BY DATE(ingested_at)
-"""
-
-# One row per NDJSON line (= one verbatim API page). The temp external table
-# reads each line as a single CSV "column" (delimiter \\x01 never occurs in
-# JSON text, quoting disabled), so no parsing happens outside PARSE_JSON.
-LOAD_SQL = f"""
-INSERT INTO `{RAW_TABLE}` (raw_payload, ingested_at, source_uri)
-SELECT PARSE_JSON(line, wide_number_mode => 'round'), CURRENT_TIMESTAMP(), _FILE_NAME
-FROM raw_lines
-"""
+# The load contract (temp external table, PARSE_JSON, _FILE_NAME→source_uri)
+# lives in ingestion/openaq/bq_load.py, shared with the Phase 5 backfill CLI
+# so the two load paths cannot drift.
+RAW_TABLE = raw_table_name(GCP_PROJECT_ID, BIGQUERY_RAW_DATASET)
 
 
 def _run_date() -> dt.date:
@@ -187,17 +179,11 @@ def reconcile_counts(summaries: list[dict]) -> None:
 
     ds = get_current_context()["ds"]
     api_total = sum(s["measurements"] for s in summaries)
-    # ingested_at is CURRENT_TIMESTAMP() of one INSERT statement, i.e. one
-    # constant per load — MAX(...) selects exactly the latest batch for ds,
-    # which keeps this correct across same-day reruns (each rerun appends).
-    day_filter = f"source_uri LIKE 'gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/%/{ds}/%'"
-    sql = f"""
-        SELECT COALESCE(SUM(ARRAY_LENGTH(JSON_QUERY_ARRAY(raw_payload, '$.results'))), 0)
-        FROM `{RAW_TABLE}`
-        WHERE {day_filter}
-          AND source_uri NOT LIKE '%/{LOCATIONS_LEAF}.json'
-          AND ingested_at = (SELECT MAX(ingested_at) FROM `{RAW_TABLE}` WHERE {day_filter})
-    """
+    # Batch isolation across same-day reruns (MAX(ingested_at)) lives in the
+    # shared measurement_count_sql builder.
+    sql = measurement_count_sql(
+        RAW_TABLE, f"gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/%/{ds}/%"
+    )
     # The native client, not hook.get_records(): the hook's DB-API layer
     # mishandles job location (job created in one location, polled in
     # another → 404, seen live). query_and_wait pins the location end-to-end.
@@ -239,7 +225,9 @@ def openaq_ingest():
     ensure_raw_table = BigQueryInsertJobOperator(
         task_id="ensure_raw_table",
         gcp_conn_id=GCP_CONN_ID,
-        configuration={"query": {"query": ENSURE_RAW_TABLE_SQL, "useLegacySql": False}},
+        configuration={
+            "query": {"query": ensure_raw_table_sql(RAW_TABLE), "useLegacySql": False}
+        },
     )
 
     load_raw_to_bq = BigQueryInsertJobOperator(
@@ -248,23 +236,15 @@ def openaq_ingest():
         outlets=[RAW_MEASUREMENTS_DATASET],
         configuration={
             "query": {
-                "query": LOAD_SQL,
+                "query": load_sql(RAW_TABLE),
                 "useLegacySql": False,
                 "tableDefinitions": {
-                    "raw_lines": {
-                        "sourceFormat": "CSV",
-                        # Wildcard deliberately ends at /* (not /*.json): in a
-                        # templated field Airflow treats any string ending in
-                        # .json as a template FILE to load (template_ext) and
-                        # fails with TemplateNotFound. The date prefix holds
-                        # only the run's NDJSON objects, so /* is equivalent.
-                        "sourceUris": [
-                            f"gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/{c}/{{{{ ds }}}}/*"
-                            for c in COUNTRIES
-                        ],
-                        "schema": {"fields": [{"name": "line", "type": "STRING"}]},
-                        "csvOptions": {"fieldDelimiter": "\u0001", "quote": ""},
-                    },
+                    # Wildcard deliberately ends at /* (not /*.json) — the
+                    # template_ext footgun; see external_table_definition.
+                    "raw_lines": external_table_definition([
+                        f"gs://{GCS_BUCKET_NAME}/{RAW_PREFIX}/{c}/{{{{ ds }}}}/*"
+                        for c in COUNTRIES
+                    ]),
                 },
             },
         },

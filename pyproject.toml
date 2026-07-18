@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "requests==2.31.0",
     "google-cloud-storage==2.16.0",
+    "google-cloud-bigquery==3.21.0",  # backfill CLI's load/reconcile (Phase 5)
 ]
 
 # Flat layout with non-package dirs (dbt/, airflow/, infra/, ...) breaks

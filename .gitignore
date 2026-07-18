@@ -76,3 +76,6 @@ coverage.xml
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/
+
+# Phase 5 backfill checkpoint file (local run state, never shared)
+backfill_state.json

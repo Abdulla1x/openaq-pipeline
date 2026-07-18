@@ -42,3 +42,37 @@ seeds:
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: [pollutant, averaging_period]
+
+  - name: known_bad_sensors
+    description: >
+      Sensors observed to fail persistently server-side (HTTP 500 on every
+      attempt — a data bug at the provider, not throttling; verified by direct
+      probe in Phase 2). Versioned here so the Phase 5 history gap audit can
+      classify their missing sensor-days as an explained gap, and so the
+      backfill CLI can optionally skip them (--skip-sensors-csv). The daily
+      DAG never skips them — its per-run failure log is how we notice one
+      recovering. Populated from summarize_country run logs; membership
+      churns slightly at the margins (see note column).
+    config:
+      column_types:
+        sensor_id: int64
+        country_code: string
+        first_seen_failing: date
+        last_verified_failing: date
+        note: string
+    columns:
+      - name: sensor_id
+        data_tests:
+          - unique
+          - not_null
+      - name: country_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [AE, PK]
+      - name: first_seen_failing
+        data_tests:
+          - not_null
+      - name: last_verified_failing
+        data_tests:
+          - not_null
