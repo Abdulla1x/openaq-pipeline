@@ -2,4 +2,3 @@ ruff==0.6.9
 pytest==8.3.3
 responses==0.25.3
 sqlfluff==3.1.1
-sqlfluff-templater-dbt==3.1.1
