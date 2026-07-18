@@ -6,10 +6,12 @@ Python ingestion layer for the OpenAQ v3 API (Phase 2 — implemented).
 
 ```
 ingestion/
-├── constants.py    WHO 2021 air-quality guideline thresholds (source of truth
-│                   until the dbt seed supersedes it in Phase 4)
+├── constants.py    WHO 2021 air-quality guideline thresholds — mirror of the
+│                   dbt seed (source of truth since Phase 4), sync-enforced by
+│                   tests/unit/test_who_seed_sync.py
 └── openaq/
-    ├── config.py    settings from the environment (.env locally, compose later)
+    ├── config.py    settings from the environment (.env locally, docker-compose
+    │                in the Airflow containers)
     ├── client.py    HTTP client: auth, header-driven rate throttling (60 req/min),
     │                429/5xx bounded retries, 401/403 fail-fast, pagination
     ├── ingest.py    G2 fan-out: countries_id → locations → target sensors

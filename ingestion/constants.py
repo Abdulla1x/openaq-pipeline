@@ -5,10 +5,11 @@ Source: WHO 2021 Global Air Quality Guidelines (PM2.5, PM10, NO2, SO2, O3, CO).
 See PROJECT_CONTEXT.md §4/G5 for the full table and rationale.
 
 NOTE: since Phase 4 the dbt seed (dbt/seeds/who_thresholds.csv) is the source
-of truth that models read; this module remains for Python-side use. The two
-are kept in sync by tests/unit/test_who_seed_sync.py, which also pins the O3
-key mapping: this dict's "24h"/"annual" shorthand for O3 corresponds to the
-seed's explicit 8h/peak_season periods.
+of truth that models read; this module has no runtime consumer and is retained
+as the seed's test-enforced mirror. The two are kept in sync by
+tests/unit/test_who_seed_sync.py, which also pins the O3 key mapping: this
+dict's "24h"/"annual" shorthand for O3 corresponds to the seed's explicit
+8h/peak_season periods.
 """
 
 WHO_THRESHOLDS_UGM3 = {
