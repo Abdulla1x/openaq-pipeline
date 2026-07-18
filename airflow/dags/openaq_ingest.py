@@ -19,8 +19,13 @@ Design notes (guardrails in docs/PROJECT_CONTEXT.md):
   on it (data-aware scheduling, no TriggerDagRunOperator).
 
 Each run ingests its logical date `ds` = the previous, completed UTC day
-(the 02:00 UTC schedule gives 2h of grace for late arrivals; a rolling
-lookback for later back-corrections is Phase 5 scope, with backfill).
+(the 02:00 UTC schedule gives 2h of grace for late arrivals). G4's rolling
+lookback (Phase 5): each sensor fetch actually covers the last LOOKBACK_DAYS
+days ending at ds — same request count (a week of hourly records fits one
+page), but late back-corrections are re-fetched and win staging's
+latest-ingested_at dedup. The landed object stays keyed to ds, so one
+calendar day's readings live in up to LOOKBACK_DAYS objects across ds
+prefixes — expected, not a bug; staging dedups.
 """
 
 import datetime as dt
@@ -49,6 +54,7 @@ GCP_CONN_ID = "google_cloud_default"  # defined via env in docker-compose (G10)
 API_POOL = "openaq_api"  # 4 slots, created by airflow-init: 60 req/min budget
 FETCH_MAX_ATTEMPTS = 2  # persistent-5xx sensors exist; deep retries are pure cost
 FAILURE_RATE_THRESHOLD = 0.20
+LOOKBACK_DAYS = 7  # G4 rolling lookback: re-fetch the last week in every run
 
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "")
@@ -124,11 +130,18 @@ def prepare_country_run(country_code: str) -> list[dict]:
 
 @task(pool=API_POOL, retries=1, execution_timeout=dt.timedelta(minutes=15))
 def fetch_sensor(country_code: str, spec: dict) -> dict:
-    """Fetch + land one sensor-day. API failures come back as data
-    (status="failed"), not exceptions — see the module docstring."""
+    """Fetch + land one sensor's lookback window ending at ds. API failures
+    come back as data (status="failed"), not exceptions — see the module
+    docstring."""
     client, writer = _client_and_writer()
     return fetch_sensor_day(
-        client, writer, country_code, _run_date(), spec["sensor_id"], spec["parameter"]
+        client,
+        writer,
+        country_code,
+        _run_date(),
+        spec["sensor_id"],
+        spec["parameter"],
+        lookback_days=LOOKBACK_DAYS,
     )
 
 

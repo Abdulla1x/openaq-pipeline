@@ -65,20 +65,28 @@ def extract_target_sensors(location_pages: list[dict]) -> list[tuple[int, str]]:
     return sorted(sensors.items())
 
 
-def fetch_sensor_day(
+def fetch_sensor_window(
     client: OpenAQClient,
     writer: RawZoneWriter,
     country_code: str,
-    date: dt.date,
+    partition: dt.date | str,
+    window_start: dt.date,
+    window_end: dt.date,
     sensor_id: int,
     parameter: str,
 ) -> dict:
-    """Fetch one sensor's measurements for one UTC day and land them raw.
+    """Fetch one sensor's measurements for [window_start, window_end) and land
+    them raw at the given path partition.
 
-    The unit of work for Phase 3's dynamically mapped Airflow tasks (G3), so
-    the return value is a plain JSON-serializable dict (XCom-safe):
-    ``status`` is ``"ok"`` (object written), ``"empty"`` (no data, nothing
-    written), or ``"failed"`` (fetch failed after retries — isolated per G12's
+    Window edges are half-open: the API returns periods starting in
+    [datetime_from, datetime_to), verified live 2026-07-18 (two abutting
+    half-day windows over a 24-record day → 12+12, no overlap). Abutting
+    windows therefore never double-land a record.
+
+    The return value is a plain JSON-serializable dict (XCom-safe — this is
+    the unit of work under Phase 3's dynamically mapped tasks): ``status`` is
+    ``"ok"`` (object written), ``"empty"`` (no data, nothing written), or
+    ``"failed"`` (fetch failed after retries — isolated per G12's
     fault-isolation decision; auth errors still propagate, since bad
     credentials fail every sensor and isolating them is pointless).
     """
@@ -91,8 +99,8 @@ def fetch_sensor_day(
         "error": None,
     }
     window = {
-        "datetime_from": f"{date.isoformat()}T00:00:00Z",
-        "datetime_to": f"{(date + dt.timedelta(days=1)).isoformat()}T00:00:00Z",
+        "datetime_from": f"{window_start.isoformat()}T00:00:00Z",
+        "datetime_to": f"{window_end.isoformat()}T00:00:00Z",
     }
     page_bodies: list[str] = []
     try:
@@ -108,11 +116,41 @@ def fetch_sensor_day(
         logger.error("sensor %s (%s): fetch failed: %s", sensor_id, parameter, exc)
         return result
     if page_bodies:
-        result["uri"] = writer.write_pages(country_code, date, sensor_id, page_bodies)
+        result["uri"] = writer.write_pages(country_code, partition, sensor_id, page_bodies)
         result["status"] = "ok"
     else:
         logger.debug("sensor %s (%s): no measurements, skipped", sensor_id, parameter)
     return result
+
+
+def fetch_sensor_day(
+    client: OpenAQClient,
+    writer: RawZoneWriter,
+    country_code: str,
+    date: dt.date,
+    sensor_id: int,
+    parameter: str,
+    lookback_days: int = 1,
+) -> dict:
+    """Fetch [date − (lookback_days−1), date+1) and land it at date's path.
+
+    With lookback_days > 1 this is G4's rolling lookback: the same single
+    request per sensor (a week of hourly records is far under the 1000-record
+    page), but late-arriving back-corrections inside the window are re-fetched
+    and win staging's latest-ingested_at dedup. The object stays keyed to the
+    run's ds, so a day's readings live in up to lookback_days objects — that
+    is expected, not a bug; dedup is dbt's job.
+    """
+    return fetch_sensor_window(
+        client,
+        writer,
+        country_code,
+        partition=date,
+        window_start=date - dt.timedelta(days=lookback_days - 1),
+        window_end=date + dt.timedelta(days=1),
+        sensor_id=sensor_id,
+        parameter=parameter,
+    )
 
 
 def ingest_country_day(

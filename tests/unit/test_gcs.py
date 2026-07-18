@@ -33,6 +33,15 @@ def test_object_name_matches_contract():
     assert object_name("PK", DATE, "locations") == "raw/openaq/PK/2026-07-12/locations.json"
 
 
+def test_object_name_accepts_window_partition():
+    """Backfill (Phase 5) lands under a window-shaped segment; staging parses
+    only country + leaf from the path, so the segment shape is free."""
+    assert (
+        object_name("PK", "backfill/2025-06-01_2025-07-31", 12345)
+        == "raw/openaq/PK/backfill/2025-06-01_2025-07-31/12345.json"
+    )
+
+
 def test_write_pages_lands_verbatim_ndjson():
     bucket = FakeBucket()
     pages = ['{"results": [1, 2]}', '{"results":  [3]}']  # odd spacing must survive
