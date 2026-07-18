@@ -3,7 +3,7 @@
 -- G6: daily averages are compared to 24h thresholds only (annual guidelines
 -- live in mart_annual_compare at the annual grain).
 -- G8: exceedance_rate carries its denominator explicitly —
--- locations_exceeding / locations_with_data, both exposed as columns.
+-- locations_exceeding / locations_comparable, both exposed as columns.
 -- G7: no completeness filter; avg_hours_covered rides along so the dashboard
 -- can show how thin the data behind a rate is (the UAE-vs-PK coverage gap is
 -- itself the finding).
@@ -68,9 +68,11 @@ select
     *,
     safe_divide(locations_exceeding, locations_comparable) * 100
         as exceedance_rate,
+    -- range frame over unix_date = 7 *calendar* days; a rows frame would
+    -- silently widen the window across day gaps in thin coverage (G7).
     avg(country_daily_avg) over (
         partition by country_code, parameter
-        order by measurement_date
-        rows between 6 preceding and current row
+        order by unix_date(measurement_date)
+        range between 6 preceding and current row
     ) as rolling_7d_avg
 from by_country_day
