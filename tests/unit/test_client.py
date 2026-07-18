@@ -8,7 +8,13 @@ import pytest
 import requests
 import responses
 
-from ingestion.openaq.client import MAX_ATTEMPTS, PAGE_LIMIT, OpenAQAuthError, OpenAQClient
+from ingestion.openaq.client import (
+    MAX_ATTEMPTS,
+    PAGE_LIMIT,
+    RATE_LIMIT_FALLBACK_SECONDS,
+    OpenAQAuthError,
+    OpenAQClient,
+)
 
 BASE = "https://api.test/v3"
 
@@ -55,6 +61,18 @@ def test_5xx_backs_off_exponentially():
 
 
 @responses.activate
+def test_429_without_reset_header_uses_fallback_wait():
+    responses.get(f"{BASE}/countries", status=429)
+    responses.get(f"{BASE}/countries", json={"results": []})
+
+    sleeps: list[float] = []
+    response = make_client(sleeps).get("/countries")
+
+    assert response.json() == {"results": []}
+    assert sleeps == [RATE_LIMIT_FALLBACK_SECONDS]
+
+
+@responses.activate
 def test_connection_error_retries():
     responses.get(f"{BASE}/countries", body=requests.ConnectionError("boom"))
     responses.get(f"{BASE}/countries", json={"results": []})
@@ -67,14 +85,18 @@ def test_connection_error_retries():
 
 
 @responses.activate
-def test_gives_up_after_max_attempts():
+def test_gives_up_after_max_attempts_without_final_sleep():
     for _ in range(MAX_ATTEMPTS):
         responses.get(f"{BASE}/countries", status=500)
 
+    sleeps: list[float] = []
     with pytest.raises(RuntimeError, match=f"after {MAX_ATTEMPTS} attempts"):
-        make_client([]).get("/countries")
+        make_client(sleeps).get("/countries")
 
     assert len(responses.calls) == MAX_ATTEMPTS
+    # One backoff between attempts, none after the last — there is no next
+    # attempt to wait for.
+    assert sleeps == [2, 4, 8, 16]
 
 
 @responses.activate
