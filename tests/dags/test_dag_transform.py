@@ -18,10 +18,14 @@ DAGS_DIR = Path(__file__).parents[2] / "airflow" / "dags"
 
 # G9 / Phase 4 exit criterion: one task per dbt node (seed, model, test) —
 # never an opaque `dbt build`. TestBehavior.AFTER_EACH pairs each model with
-# its tests so failures gate downstream models.
+# its tests so failures gate downstream models. The elementary package's own
+# models are excluded from rendering (Phase 5) — observability metadata, not
+# pipeline lineage — so they must never appear here.
 EXPECTED_TASK_IDS = {
     "who_thresholds.seed",
     "who_thresholds.test",
+    "known_bad_sensors.seed",
+    "known_bad_sensors.test",
     "stg_measurements.run",
     "stg_measurements.test",
     "stg_locations.run",

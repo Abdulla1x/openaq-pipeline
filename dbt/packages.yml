@@ -1,3 +1,10 @@
 packages:
   - package: dbt-labs/dbt_utils
     version: [">=1.0.0", "<2.0.0"]
+  # Observability (Phase 5): run/test history + monitors materialized into
+  # openaq_dbt_elementary (Terraform-provisioned — the least-privilege SA
+  # cannot create the dataset dbt's suffix resolution targets). 0.16.x is the
+  # dbt-1.8-compatible line; the edr CLI (host venv, see Makefile) must match
+  # this minor version.
+  - package: elementary-data/elementary
+    version: 0.16.4

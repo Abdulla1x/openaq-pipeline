@@ -10,6 +10,17 @@ sources:
     schema: "{{ env_var('BIGQUERY_RAW_DATASET', 'openaq_raw') }}"
     tables:
       - name: raw_measurements
+        # Freshness off the load-batch timestamp: the daily load lands ~02:05
+        # UTC, so a healthy table is never older than ~26h at the next day's
+        # check. warn at 30h tolerates one late/slow run; error at 54h means a
+        # full day was missed twice over. Checked via `make freshness` —
+        # deliberately not a task in the Dataset-triggered transform DAG,
+        # which only runs when data just arrived (a freshness check that can
+        # only run on success would be decorative).
+        loaded_at_field: ingested_at
+        freshness:
+          warn_after: {count: 30, period: hour}
+          error_after: {count: 54, period: hour}
         description: >
           raw_payload JSON (verbatim page body) + ingested_at (one value per
           load batch; staging dedups on it) + source_uri

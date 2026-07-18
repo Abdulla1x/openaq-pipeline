@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 import pendulum
-from cosmos import DbtDag, ProfileConfig, ProjectConfig
+from cosmos import DbtDag, ProfileConfig, ProjectConfig, RenderConfig
 from openaq_datasets import RAW_MEASUREMENTS_DATASET
 
 DBT_PROJECT_DIR = Path(os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt"))
@@ -40,6 +40,12 @@ openaq_transform = DbtDag(
     tags=["openaq", "dbt", "transform"],
     doc_md=__doc__,
     project_config=ProjectConfig(dbt_project_path=DBT_PROJECT_DIR),
+    # The elementary package's own models stay out of the rendered DAG (they
+    # are observability metadata, not pipeline lineage — and would triple the
+    # task count). Its on-run-end hooks still fire inside every cosmos dbt
+    # invocation, so run/test results accumulate regardless; the tables are
+    # bootstrapped once host-side (make elementary-bootstrap).
+    render_config=RenderConfig(exclude=["package:elementary"]),
     profile_config=ProfileConfig(
         # Must name the profile/target in dbt/profiles.yml; the file itself
         # holds no secrets (G10 — env_var() indirection only).

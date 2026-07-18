@@ -15,10 +15,15 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# No +schema overrides: the target dataset (openaq_dbt) comes from the
-# profile; dbt's default schema-name generation would append a custom schema
-# to it (openaq_dbt_dbt), a dataset that doesn't exist and that the
-# least-privilege SA has no permission to create.
+# No +schema overrides on our own models: the target dataset (openaq_dbt)
+# comes from the profile; dbt's default schema-name generation would append a
+# custom schema to it (openaq_dbt_dbt), a dataset that doesn't exist and that
+# the least-privilege SA has no permission to create.
+#
+# The one deliberate exception is the elementary package: its +schema suffix
+# resolves to openaq_dbt_elementary, which Terraform provisions with an
+# explicit SA grant (infra/bigquery.tf) — observability metadata stays out of
+# the dataset Looker will browse.
 models:
   openaq:
     staging:
@@ -27,3 +32,5 @@ models:
       +materialized: table
     mart:
       +materialized: table
+  elementary:
+    +schema: elementary

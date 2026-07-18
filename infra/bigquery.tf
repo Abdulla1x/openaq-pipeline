@@ -21,3 +21,16 @@ resource "google_bigquery_dataset" "dbt" {
 
   depends_on = [google_project_service.apis["bigquery.googleapis.com"]]
 }
+
+# The Elementary observability package targets <profile dataset>_elementary
+# via dbt's suffix-style schema resolution. The least-privilege SA cannot
+# create datasets, so IaC provisions the exact name dbt resolves to (G11) —
+# no generate_schema_name macro hacks. Kept separate from openaq_dbt so
+# Elementary's ~15 metadata tables stay out of the dataset Looker browses.
+resource "google_bigquery_dataset" "elementary" {
+  dataset_id  = "openaq_dbt_elementary"
+  location    = var.region
+  description = "Elementary data-observability metadata (dbt run/test history, monitors)."
+
+  depends_on = [google_project_service.apis["bigquery.googleapis.com"]]
+}
