@@ -30,8 +30,17 @@ models:
           - accepted_values:
               values: [pm25, pm10, no2]
       - name: measurement_value
+        description: >
+          Can be null: the API serves records with "value": null when a
+          station transmits without a reading (first seen in the Phase 5
+          backfill — sensor 13144205, 2026-04). Staging keeps the row
+          (faithful parse); int_daily_aqi excludes valueless records so G7's
+          completeness columns count only real readings. Warn severity keeps
+          the volume visible without failing the build.
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                severity: warn
       - name: unit
         description: >
           Threshold-join key (G5): the marts match values to WHO guidelines on
@@ -59,6 +68,15 @@ models:
               values: [AE, PK]
       - name: is_reference_monitor
         data_tests: [not_null]
+      - name: datetime_first_utc
+        description: >
+          First measurement timestamp the API reports for the station; null if
+          it has never reported. Gap-audit input (Phase 5) — no not_null test
+          on purpose.
+      - name: datetime_last_utc
+        description: >
+          Latest measurement timestamp the API reports for the station; null
+          if it has never reported.
 
   - name: stg_sensors
     description: One row per sensor — the sensor -> location bridge.

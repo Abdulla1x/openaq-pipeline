@@ -37,6 +37,12 @@ parsed as (
         cast(json_value(record, '$.coordinates.latitude') as float64) as latitude,
         cast(json_value(record, '$.coordinates.longitude') as float64) as longitude,
         json_value(record, '$.timezone') as timezone,
+        -- Station activity range as reported by the API (null when a station
+        -- has never reported). Drives the Phase 5 history gap audit's
+        -- explained-gap classes: a missing station-day before datetime_first
+        -- or after datetime_last is expected, not a pipeline gap.
+        timestamp(json_value(record, '$.datetimeFirst.utc')) as datetime_first_utc,
+        timestamp(json_value(record, '$.datetimeLast.utc')) as datetime_last_utc,
         ingested_at
     from records
 

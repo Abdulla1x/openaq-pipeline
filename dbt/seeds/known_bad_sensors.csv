@@ -1,37 +1,59 @@
 sensor_id,country_code,first_seen_failing,last_verified_failing,note
 15904590,PK,2026-07-13,2026-07-17,persistent HTTP 500 since first Phase 2 live run
+16034745,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034746,PK,2026-07-15,2026-07-15,intermittent HTTP 500; contiguous onboarding id block
+16034747,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034748,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034749,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034750,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034751,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034752,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034753,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034754,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034755,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034756,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034757,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034758,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034759,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034760,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034761,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034762,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034763,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16034764,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16034765,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034766,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034767,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16034768,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034769,PK,2026-07-15,2026-07-15,intermittent HTTP 500; contiguous onboarding id block
 16034770,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034771,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16034772,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034773,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034774,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034775,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034776,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16034777,PK,2026-07-15,2026-07-15,intermittent HTTP 500; contiguous onboarding id block
 16034778,PK,2026-07-17,2026-07-17,intermittent HTTP 500; contiguous onboarding id block
 16034779,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16034780,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16034781,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16034782,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242897,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16242898,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16242899,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16242900,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
+16242901,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16242902,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242903,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242904,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16242905,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16242906,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242907,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242908,PK,2026-07-15,2026-07-15,intermittent HTTP 500; contiguous onboarding id block
 16242909,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242910,PK,2026-07-15,2026-07-15,intermittent HTTP 500; contiguous onboarding id block
+16242911,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16242912,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
+16242913,PK,2026-07-18,2026-07-18,persistent HTTP 500 during Phase 5 backfill; contiguous onboarding id block
 16242914,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
 16242915,PK,2026-07-15,2026-07-17,persistent HTTP 500; contiguous onboarding id block
