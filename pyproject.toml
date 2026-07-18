@@ -36,7 +36,13 @@ exclude = [
 select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
+# Bare `pytest` stays credential-free: unit tests only. tests/dags needs the
+# constrained Airflow env (dag-validate CI job); tests/integration hits live
+# OpenAQ + GCP and is invoked explicitly via `make integration-test`.
 testpaths = ["tests/unit"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 pythonpath = ["."]
+markers = [
+    "integration: live round-trip against OpenAQ + GCP; needs a sourced .env (never in CI)",
+]
