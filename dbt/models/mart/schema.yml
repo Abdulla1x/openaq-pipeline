@@ -25,12 +25,28 @@ models:
           - not_null
           - dbt_utils.accepted_range:
               min_value: 1
+      - name: threshold_24h
+        description: WHO 2021 24h guideline matched on pollutant + unit (G5/G6).
+      - name: locations_exceeding
+        description: Stations whose daily_avg strictly exceeded threshold_24h.
+      - name: locations_comparable
+        description: >
+          The rate's denominator (G8) — stations with a matching 24h threshold
+          that day; stations without one keep a null flag and drop out of the
+          denominator only, never out of the table.
       - name: exceedance_rate
-        description: Null when no station-day had a matching 24h threshold.
+        description: >
+          locations_exceeding / locations_comparable * 100 — the share of
+          reporting stations exceeding that day. Null when no station-day had
+          a matching 24h threshold.
         data_tests:
           - dbt_utils.accepted_range:
               min_value: 0
               max_value: 100
+      - name: rolling_7d_avg
+        description: >
+          country_daily_avg averaged over a 7-calendar-day range window
+          (not 7 rows — day gaps must not widen the window).
 
   - name: mart_annual_compare
     description: >
@@ -55,3 +71,14 @@ models:
           - not_null
           - dbt_utils.accepted_range:
               min_value: 1
+      - name: locations_with_data
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: threshold_annual
+        description: WHO 2021 annual guideline matched on pollutant + unit (G5/G6).
+      - name: exceeds_annual
+        description: >
+          annual_mean strictly above threshold_annual; null when the pollutant
+          has no 2021 annual guideline in its unit (e.g. SO2, CO).
