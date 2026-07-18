@@ -16,7 +16,6 @@ requests==2.31.0
 # ── GCP libraries ─────────────────────────────────────────────────────────────
 google-cloud-storage==2.16.0
 google-cloud-bigquery==3.21.0
-db-dtypes==1.2.0          # required by bigquery pandas integration
 numpy==1.26.4             # pandas in the base image is numpy-1.x ABI
 
 # ── dbt (BigQuery adapter) ────────────────────────────────────────────────────

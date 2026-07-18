@@ -52,10 +52,16 @@ class OpenAQClient:
         url = f"{self._base_url}{path}"
         last_error: Exception | None = None
         for attempt in range(self._max_attempts):
+            # Sleeping after the *final* failed attempt is pure wasted latency —
+            # there is no next attempt to back off for (the DAG's known-bad
+            # sensors hit this on every run).
+            is_last_attempt = attempt == self._max_attempts - 1
             try:
                 response = self._session.get(url, params=params, timeout=DEFAULT_TIMEOUT_SECONDS)
             except requests.RequestException as exc:
                 last_error = exc
+                if is_last_attempt:
+                    break
                 wait = BACKOFF_BASE_SECONDS * 2**attempt
                 logger.warning("GET %s failed (%s); retrying in %ss", path, exc, wait)
                 self._sleep(wait)
@@ -66,17 +72,21 @@ class OpenAQClient:
                     f"OpenAQ returned {response.status_code} for {path} — check OPENAQ_API_KEY"
                 )
             if response.status_code == 429:
+                last_error = requests.HTTPError(f"429 on {path}", response=response)
+                if is_last_attempt:
+                    break
                 wait = _int_header(response, "x-ratelimit-reset", RATE_LIMIT_FALLBACK_SECONDS)
                 logger.warning("Rate limited on %s; waiting %ss", path, wait)
-                last_error = requests.HTTPError(f"429 on {path}", response=response)
                 self._sleep(wait)
                 continue
             if response.status_code >= 500:
-                wait = BACKOFF_BASE_SECONDS * 2**attempt
-                logger.warning("HTTP %s on %s; retrying in %ss", response.status_code, path, wait)
                 last_error = requests.HTTPError(
                     f"{response.status_code} on {path}", response=response
                 )
+                if is_last_attempt:
+                    break
+                wait = BACKOFF_BASE_SECONDS * 2**attempt
+                logger.warning("HTTP %s on %s; retrying in %ss", response.status_code, path, wait)
                 self._sleep(wait)
                 continue
 

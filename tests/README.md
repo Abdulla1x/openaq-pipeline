@@ -15,6 +15,7 @@ tests/
 ├── dags/
 │   ├── conftest.py             Parse-time env + DAGS_FOLDER on sys.path (as production does)
 │   ├── test_dag_integrity.py   DagBag import + structure of the openaq_ingest DAG
+│   ├── test_ingest_task_behavior.py   Failure model: 20% threshold + zero-sensor guard
 │   └── test_dag_transform.py   Cosmos per-node tasks + the Dataset schedule contract (G9)
 └── integration/                Empty until Phase 5
 ```
@@ -26,7 +27,7 @@ parse-time environment the DAG modules and the cosmos render need.
 ## Running tests
 
 ```bash
-pytest tests/unit/ -v    # 27 unit tests; fast, no credentials needed (also: make test)
+pytest tests/unit/ -v    # 28 unit tests; fast, no credentials needed (also: make test)
 make dag-test            # quick DAG import check inside the Airflow container
 ```
 

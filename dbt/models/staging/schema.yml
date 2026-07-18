@@ -32,6 +32,17 @@ models:
       - name: measurement_value
         data_tests:
           - not_null
+      - name: unit
+        description: >
+          Threshold-join key (G5): the marts match values to WHO guidelines on
+          pollutant AND unit, so an unexpected unit here silently nulls the
+          exceedance flag and shrinks the rate denominator downstream. All
+          current target parameters report µg/m³; widening TARGET_PARAMETERS
+          must consciously widen this test too.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ["µg/m³"]
       - name: period_start_utc
         data_tests:
           - not_null

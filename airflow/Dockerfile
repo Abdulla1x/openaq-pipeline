@@ -1,4 +1,6 @@
-FROM apache/airflow:2.9.1
+# Python variant pinned explicitly: CI's dag-validate job hardcodes the 3.12
+# constraints file to mirror this image — an unpinned base makes that accidental.
+FROM apache/airflow:2.9.1-python3.12
 
 COPY requirements.txt /requirements.txt
 # Install under the official constraints for this Airflow release so pip
