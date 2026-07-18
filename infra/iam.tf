@@ -33,6 +33,12 @@ resource "google_bigquery_dataset_iam_member" "dbt_data_editor" {
   member     = "serviceAccount:${google_service_account.pipeline.email}"
 }
 
+resource "google_bigquery_dataset_iam_member" "elementary_data_editor" {
+  dataset_id = google_bigquery_dataset.elementary.dataset_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.pipeline.email}"
+}
+
 resource "google_project_iam_member" "bq_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"

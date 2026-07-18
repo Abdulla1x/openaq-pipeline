@@ -76,3 +76,11 @@ coverage.xml
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/
+
+# Phase 5 backfill checkpoint file (local run state, never shared)
+backfill_state.json
+
+# Phase 5 observability artifacts (local-only)
+.venv-edr/
+elementary_report.html
+edr_target/

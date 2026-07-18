@@ -12,4 +12,5 @@ scripts/
                     Terraform in infra/ (guardrail G11).
 ```
 
-A backfill helper is planned for Phase 5.
+The Phase 5 backfill shipped as a CLI subcommand rather than a shell script —
+see `python -m ingestion.openaq backfill --help` and `ingestion/README.md`.

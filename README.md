@@ -4,13 +4,16 @@ Batch data engineering pipeline ingesting air-quality data from the OpenAQ v3
 API, comparing the UAE and Pakistan on PM2.5 / PM10 / NO2 against WHO 2021
 thresholds. The cross-country data-quality gap is itself an intended finding.
 
-**Status:** Phases 0–4 complete — repo hygiene + CI/CD, GCP infrastructure via
+**Status:** Phases 0–5 complete — repo hygiene + CI/CD, GCP infrastructure via
 Terraform, the tested OpenAQ v3 ingestion client, the Airflow ingest DAG
-(dynamic task mapping over sensors) loading verbatim raw JSON into BigQuery,
-and the dbt ELT layer (staging → daily aggregates → WHO-exceedance marts) run
-by astronomer-cosmos as per-model Airflow tasks on a Dataset-triggered
-transform DAG. Phases 5–7 (backfill + observability, serving, polish) not yet
-started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
+(dynamic task mapping over sensors, 7-day rolling lookback) loading verbatim
+raw JSON into BigQuery, the dbt ELT layer (staging → daily aggregates →
+WHO-exceedance marts) run by astronomer-cosmos as per-model Airflow tasks on
+a Dataset-triggered transform DAG, and now the backfilled history (1.6M
+measurements: AE from 2024-07, PK from 2025-06 — spans chosen from sensor
+metadata, every chunk count-reconciled, gaps audited and classified) with
+observability via dbt source freshness + Elementary. Phases 6–7 (serving,
+polish) remain — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap.
 
 ## Stack
 
@@ -21,6 +24,7 @@ started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
 | Warehouse | BigQuery |
 | Transformation | dbt (staging → intermediate → mart) |
 | Orchestration | Apache Airflow 2.9 (Docker Compose, LocalExecutor) |
+| Observability | dbt source freshness + Elementary |
 | IaC | Terraform |
 | Dashboard | Looker Studio |
 
@@ -33,7 +37,7 @@ started — see `docs/PROJECT_CONTEXT.md` §6 for the roadmap and exit criteria.
 ├── ingestion/      OpenAQ v3 client (fan-out to GCS raw) + WHO threshold constants
 ├── infra/          Terraform IaC for GCP (bucket, datasets, service account)
 ├── scripts/        Dev utility scripts (bootstrap)
-├── tests/          Pytest suite (unit + DAG integrity; integration in Phase 5)
+├── tests/          Pytest suite (unit + DAG integrity + live integration test)
 ├── docs/           PROJECT_CONTEXT.md (source of truth) + architecture overview
 └── looker/         Looker Studio exports; lands in Phase 6
 ```

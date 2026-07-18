@@ -10,6 +10,7 @@ from ingestion.openaq.client import OpenAQAuthError, OpenAQClient
 from ingestion.openaq.ingest import (
     extract_target_sensors,
     fetch_sensor_day,
+    fetch_sensor_window,
     ingest_country_day,
     resolve_country_id,
 )
@@ -156,6 +157,44 @@ def test_fetch_sensor_day_failure_is_reported_not_raised():
     assert result["status"] == "failed"
     assert "attempts" in result["error"]
     assert result["measurements"] == 0
+
+
+@responses.activate
+def test_fetch_sensor_day_lookback_widens_window_keeps_ds_path():
+    """G4 rolling lookback: the request window starts lookback_days−1 before
+    the run date, but the landed object stays keyed to the run date."""
+    responses.get(f"{BASE}/sensors/11/measurements", body=SENSOR_11_BODY,
+                  content_type="application/json")
+    writer = FakeWriter()
+    result = fetch_sensor_day(
+        make_client(), writer, "AE", DATE, 11, "pm25", lookback_days=7
+    )
+    url = responses.calls[0].request.url
+    assert "datetime_from=2026-07-06T00%3A00%3A00Z" in url  # DATE − 6
+    assert "datetime_to=2026-07-13T00%3A00%3A00Z" in url  # DATE + 1
+    assert result["uri"] == "gs://fake/raw/openaq/AE/2026-07-12/11.json"
+    assert writer.writes[0][1] == DATE  # partition unchanged by lookback
+
+
+@responses.activate
+def test_fetch_sensor_window_uses_half_open_edges_and_partition():
+    """Backfill's unit of work: an arbitrary [start, end) window landed under
+    an arbitrary path partition (window edges verified half-open, 2026-07-18)."""
+    responses.get(f"{BASE}/sensors/11/measurements", body=SENSOR_11_BODY,
+                  content_type="application/json")
+    writer = FakeWriter()
+    result = fetch_sensor_window(
+        make_client(), writer, "PK",
+        partition="backfill/2025-06-01_2025-07-31",
+        window_start=dt.date(2025, 6, 1),
+        window_end=dt.date(2025, 7, 31),
+        sensor_id=11, parameter="pm25",
+    )
+    url = responses.calls[0].request.url
+    assert "datetime_from=2025-06-01T00%3A00%3A00Z" in url
+    assert "datetime_to=2025-07-31T00%3A00%3A00Z" in url
+    assert result["status"] == "ok"
+    assert writer.writes[0][1] == "backfill/2025-06-01_2025-07-31"
 
 
 @responses.activate

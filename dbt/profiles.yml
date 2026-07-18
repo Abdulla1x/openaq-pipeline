@@ -10,3 +10,19 @@ openaq:
       threads: 4
       timeout_seconds: 300
       location: us-central1
+
+# The edr CLI (Phase 5 observability, host-side .venv-edr) connects through
+# its own profile pointed at the elementary metadata dataset. Same G10 rule
+# as above: env_var() indirection only, no secret values in this file.
+elementary:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BIGQUERY_DATASET', 'openaq_dbt') }}_elementary"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      threads: 4
+      timeout_seconds: 300
+      location: us-central1
