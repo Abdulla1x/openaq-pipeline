@@ -37,9 +37,15 @@
 
 with audit_spans as (
 
-    select 'AE' as country_code, date '2024-07-01' as span_start, date '2026-07-17' as span_end
+    select
+        'AE' as country_code,
+        date '2024-07-01' as span_start,
+        date '2026-07-17' as span_end
     union all
-    select 'PK' as country_code, date '2025-06-01' as span_start, date '2026-07-17' as span_end
+    select
+        'PK' as country_code,
+        date '2025-06-01' as span_start,
+        date '2026-07-17' as span_end
 
 ),
 
@@ -91,7 +97,8 @@ classified as (
         expected.parameter,
         date_trunc(expected.expected_day, month) as audit_month,
         case
-            when actual.sensor_id is not null
+            when
+                actual.sensor_id is not null
                 and expected.first_day is not null
                 and expected.expected_day < expected.first_day
                 then 'data_before_first'

@@ -10,7 +10,7 @@ infra/
 ├── variables.tf              project_id, region (+ derived bucket name)
 ├── apis.tf                   Enables storage / bigquery / iam APIs
 ├── gcs.tf                    Raw JSON landing bucket (versioned, no public access)
-├── bigquery.tf               Datasets: openaq_raw, openaq_dbt (no tables — see below)
+├── bigquery.tf               Datasets: openaq_raw, openaq_dbt, openaq_dbt_elementary (no tables — see below)
 ├── iam.tf                    Pipeline service account + least-privilege grants
 ├── outputs.tf                Bucket name, dataset IDs, SA email
 ├── terraform.tfvars.example  Committed template; real terraform.tfvars is gitignored

@@ -47,6 +47,21 @@ with rationale. The most consequential:
   UAE-vs-Pakistan comparison the project exists to make.
 - **WHO 2021 thresholds as a dbt seed (G5):** versioned and testable instead of
   hardcoded in SQL.
+- **Rolling 7-day lookback (G4):** the daily DAG re-fetches the last week per
+  sensor at no extra request cost; late or corrected readings win the
+  latest-`ingested_at` dedup in staging.
+
+## History and observability (Phase 5)
+
+- **Backfill CLI** (`python -m ingestion.openaq backfill`): chunked, resumable
+  wide-window history load (AE from 2024-07, PK from 2025-06 — spans chosen
+  from sensor metadata). It shares the DAG's exact BigQuery load contract via
+  `ingestion/openaq/bq_load.py`, so the two load paths cannot drift; every
+  chunk is count-reconciled against the API before being checkpointed.
+- **Observability:** dbt source freshness on `raw_measurements.ingested_at`
+  (`make freshness`) plus the Elementary dbt package writing run/test metadata
+  to a dedicated `openaq_dbt_elementary` dataset, with an HTML report via the
+  edr CLI (`make elementary-report`).
 
 ## Full documentation
 

@@ -85,7 +85,14 @@ class BackfillState:
         self._path = Path(path)
         self._records: list[dict] = []
         if self._path.exists():
-            self._records = json.loads(self._path.read_text())["completed"]
+            try:
+                self._records = json.loads(self._path.read_text())["completed"]
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise RuntimeError(
+                    f"backfill state file {self._path} is unreadable ({exc!r}); "
+                    "delete or repair it to resume (completed chunks can be "
+                    "re-verified against BigQuery counts)"
+                ) from exc
 
     @staticmethod
     def _key(record: dict) -> tuple[str, str, str]:
@@ -97,7 +104,11 @@ class BackfillState:
 
     def mark_done(self, record: dict) -> None:
         self._records.append(record)
-        self._path.write_text(json.dumps({"completed": self._records}, indent=2) + "\n")
+        # Temp file + atomic rename: a crash mid-write must never corrupt the
+        # checkpoint history that resume depends on.
+        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
+        tmp_path.write_text(json.dumps({"completed": self._records}, indent=2) + "\n")
+        os.replace(tmp_path, self._path)
 
 
 class RawLoader:

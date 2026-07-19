@@ -11,6 +11,7 @@ logs:
 
 lint:
 	ruff check .
+	sqlfluff lint dbt/models dbt/analyses
 
 test:
 	pytest tests/unit/ -v
@@ -29,7 +30,7 @@ elementary-bootstrap:
 
 # Generates elementary_report.html (gitignored) from the metadata tables.
 # Needs the dedicated edr venv (its dep tree conflicts with both the pinned
-# dev venv and the Airflow image): see tests/README.md / docs.
+# dev venv and the Airflow image): see dbt/README.md (Observability).
 elementary-report:
 	.venv-edr/bin/edr report --project-dir dbt --profiles-dir dbt \
 		--file-path elementary_report.html

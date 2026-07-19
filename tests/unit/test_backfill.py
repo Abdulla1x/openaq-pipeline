@@ -109,6 +109,28 @@ def test_state_roundtrip_and_resume(tmp_path):
     assert json.loads(path.read_text())["completed"][0]["measurements"] == 2
 
 
+def test_state_corrupt_file_fails_loudly_with_path(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"completed": [truncated')  # what a crash mid-write leaves
+    with pytest.raises(RuntimeError, match="state.json"):
+        BackfillState(path)
+    # Valid JSON with the wrong shape is just as unreadable.
+    path.write_text('{"wrong_key": []}')
+    with pytest.raises(RuntimeError, match="unreadable"):
+        BackfillState(path)
+
+
+def test_state_mark_done_replaces_atomically_leaving_no_temp_file(tmp_path):
+    state = BackfillState(tmp_path / "state.json")
+    state.mark_done({
+        "country": "AE",
+        "window_start": START.isoformat(),
+        "window_end": END.isoformat(),
+        "measurements": 2,
+    })
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
 def test_load_skip_sensors(tmp_path):
     csv_path = tmp_path / "bad.csv"
     csv_path.write_text(
