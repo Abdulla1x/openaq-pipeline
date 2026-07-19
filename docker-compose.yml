@@ -107,7 +107,10 @@ services:
     <<: *airflow-common
     command: scheduler
     healthcheck:
-      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--hostname", "$${HOSTNAME}"]
+      # Exec-form CMD would pass $${HOSTNAME} through as a literal (no shell
+      # expansion), matching a hostname that can't exist — the check would
+      # always fail. CMD-SHELL runs under sh, which expands it correctly.
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
       interval: 30s
       timeout: 10s
       retries: 5
