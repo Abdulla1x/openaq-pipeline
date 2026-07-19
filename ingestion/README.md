@@ -1,6 +1,7 @@
 # ingestion/
 
-Python ingestion layer for the OpenAQ v3 API (Phase 2 — implemented).
+Python ingestion layer for the OpenAQ v3 API (Phase 2; backfill + shared
+BigQuery load contract added in Phase 5).
 
 ## Contents
 

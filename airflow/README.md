@@ -22,7 +22,10 @@ mounted as a Docker volume by `docker-compose.yml`).
 
 ## The ingest DAG (`openaq_ingest`)
 
-Daily at 02:00 UTC, for the previous (completed) UTC day; per country (AE, PK):
+Daily at 02:00 UTC, keyed on the previous (completed) UTC day (`ds`); each
+sensor fetch actually covers the rolling 7-day window `[ds−6, ds+1)` so late
+or corrected readings are re-fetched and win the staging dedup (G4 — same
+request count, a week fits one API page). Per country (AE, PK):
 
 1. `prepare_country_run` — resolves the country, lands the verbatim
    `locations.json` inventory in GCS, emits the target-sensor list.
