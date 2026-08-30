@@ -395,8 +395,10 @@ Done (the polish itself):
       and the Makefile.
 - [x] Finding front-and-center — second section of the README, with its coverage caveat,
       as-of date, dashboard link, and snapshot.
-- [x] Architecture diagram present — Mermaid `flowchart TD` in the README, rendering
-      confirmed on github.com.
+- [x] Architecture diagram present — Mermaid `flowchart TD` in the README, validated by
+      parsing the committed block with mermaid 11 (`mermaid.parse` → `flowchart-v2`), the
+      same major version GitHub renders with. A syntax error would otherwise degrade to a
+      plain code block with no build failure anywhere.
 
 **Carried into Phase 7 — all four resolved:**
 - **Dev-venv drift** → rebuilt clean; 83 → 46 distributions, `make lint`/`make test` green.
