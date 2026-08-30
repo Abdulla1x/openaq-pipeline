@@ -68,11 +68,21 @@ select
     *,
     safe_divide(locations_exceeding, locations_comparable) * 100
         as exceedance_rate,
-    -- range frame over unix_date = 7 *calendar* days; a rows frame would
-    -- silently widen the window across day gaps in thin coverage (G7).
-    avg(country_daily_avg) over (
-        partition by country_code, parameter
-        order by unix_date(measurement_date)
-        range between 6 preceding and current row
-    ) as rolling_7d_avg
+    avg(country_daily_avg) over w_7d as rolling_7d_avg,
+    -- Ratio of sums, not the mean of the daily rates: AE reports ~8 stations
+    -- a day to PK's ~180, so averaging rates would weight a 3-station day
+    -- equal to a 180-station one. Summing numerator and denominator across
+    -- the window keeps G8's denominator a real quantity -- this is the share
+    -- of station-days exceeding over the last 7 calendar days.
+    safe_divide(
+        sum(locations_exceeding) over w_7d,
+        sum(locations_comparable) over w_7d
+    ) * 100 as rolling_7d_station_exceedance_rate
 from by_country_day
+-- range frame over unix_date = 7 *calendar* days; a rows frame would
+-- silently widen the window across day gaps in thin coverage (G7).
+window w_7d as (
+    partition by country_code, parameter
+    order by unix_date(measurement_date)
+    range between 6 preceding and current row
+)

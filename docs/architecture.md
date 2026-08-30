@@ -22,6 +22,7 @@ BigQuery openaq_raw.raw_measurements — raw JSON + ingested_at + source_uri
 staging → intermediate (daily aggregates + completeness) → mart (exceedance)
    ▼
 Looker Studio — UAE vs PK trends, exceedance rates, coverage panel
+  (reads mart_country_compare / mart_exceedance_summary / mart_annual_compare)
 ```
 
 ## Why this stack

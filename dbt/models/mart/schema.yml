@@ -47,6 +47,20 @@ models:
         description: >
           country_daily_avg averaged over a 7-calendar-day range window
           (not 7 rows — day gaps must not widen the window).
+      - name: rolling_7d_station_exceedance_rate
+        description: >
+          Share of station-days exceeding over the same 7-calendar-day
+          window — sum(locations_exceeding) / sum(locations_comparable), a
+          ratio of sums rather than a mean of daily rates, so a thin-coverage
+          day cannot weigh as much as a full one (G8: the denominator stays a
+          real quantity). Null when no station-day in the window had a
+          matching 24h threshold. The daily exceedance_rate remains the
+          unsmoothed source; this column exists because the daily series is
+          too dense to read a trend from.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
 
   - name: mart_annual_compare
     description: >
