@@ -9,21 +9,16 @@ finding rather than hiding it behind a completeness filter.
 
 ## Data flow
 
-```
-OpenAQ v3 API (countries → locations → sensors → measurements)
-   │  Airflow: dynamic task mapping over sensors
-   ▼
-GCS raw/  — verbatim JSON, partitioned by country/date/sensor [immutable]
-   │  GCS → BigQuery load (WRITE_APPEND)
-   ▼
-BigQuery openaq_raw.raw_measurements — raw JSON + ingested_at + source_uri
-   │  dbt (via Cosmos), triggered off an Airflow Dataset
-   ▼
-staging → intermediate (daily aggregates + completeness) → mart (exceedance)
-   ▼
-Looker Studio — UAE vs PK trends, exceedance rates, coverage panel
-  (reads mart_country_compare / mart_exceedance_summary / mart_annual_compare)
-```
+The rendered architecture diagram lives in the [root README](../README.md#architecture)
+— one source, so it cannot drift from a second copy here. In one line:
+
+OpenAQ v3 API → Airflow ingest DAG (dynamic task mapping over sensors, 7-day
+rolling lookback) → GCS raw zone (verbatim JSON, immutable) → BigQuery
+`openaq_raw.raw_measurements` → *Airflow Dataset event* → dbt via Cosmos
+(staging → `int_daily_aqi` → marts) → Looker Studio.
+
+The backfill CLI enters the same GCS and BigQuery load contract as the DAG
+(`ingestion/openaq/bq_load.py`), so the two ingestion paths cannot drift apart.
 
 ## Why this stack
 
