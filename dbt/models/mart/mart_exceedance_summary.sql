@@ -80,6 +80,13 @@ summary as (
 -- With a null common_span_start the countifs above yield 0, which would
 -- read as "zero comparable days" — a claim about a window that does not
 -- exist. Null the counts too: no window, no numbers.
+--
+-- The rate below is null in that case as well, but by a different mechanism:
+-- a select-list alias is not visible to its sibling expressions in BigQuery,
+-- so safe_divide reads summary's raw 0/0 rather than the nulled aliases, and
+-- safe_divide(0, 0) is null. Correct, but load-bearing on that identity —
+-- anything that replaces the null guard with a sentinel must revisit this
+-- line. Verified live on AE pm10 (the one parameter with no common window).
 select
     * except (days_comparable_common, days_exceeded_common),
     if(common_span_start is null, null, days_comparable_common)

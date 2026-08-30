@@ -30,7 +30,7 @@ parse-time environment the DAG modules and the cosmos render need.
 ## Running tests
 
 ```bash
-pytest tests/unit/ -v    # 42 unit tests; fast, no credentials needed (also: make test)
+pytest tests/unit/ -v    # 44 unit tests; fast, no credentials needed (also: make test)
 make dag-test            # quick DAG import check inside the Airflow container
 make integration-test    # ONE live round-trip; needs a sourced .env (never in CI)
 ```

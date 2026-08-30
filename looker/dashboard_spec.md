@@ -74,6 +74,16 @@ Same two country colours on every chart so the eye reads country once.
    - AE mean daily PM2.5 — AE/pm25 → 37 µg/m³
    Label the rate scorecards "% of days over WHO 24h guideline (common window,
    since Jun 2025)".
+
+   **Window caveat (recorded in the Phase 7 audit).** The two rates are
+   common-window columns; `mean_country_daily_avg` is **full-span** — the model
+   publishes no common-window mean. For PK the two coincide (PK's own first day
+   *is* the common-span start), and for AE they agree to the quoted figure
+   (full-span 37.4 vs common-window 36.8 µg/m³, both "37"), so the headline
+   sentence is accurate as written. It is accurate by a margin, not by
+   construction: if AE's pre-2025-06 stretch ever diverges from its later
+   readings, these two scorecards start describing different windows while
+   sitting in the same row. Recompute both before requoting them.
 3. **Summary table**, source B, all rows — the G8 artifact (every rate beside its
    denominator and span). Columns: `country_code`, `parameter`,
    `first_day_with_data`, `last_day_with_data`, `days_exceeded`,
