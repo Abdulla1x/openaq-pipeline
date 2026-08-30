@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.15 · **Last updated:** 2026-08-30 · **Current phase:** Phase 7 complete — all seven phases done
+> **Version:** 1.16 · **Last updated:** 2026-08-30 · **Current phase:** Phase 7 complete — all seven phases done
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo.
 
 ---
@@ -208,7 +208,7 @@ Done:
 **Phase 1 — complete (merged to main as PR #4, commit a9376a5, 2026-07-12).**
 
 Done:
-- GCP project `openaq-pipeline` (billing linked; free trial started ~2026-07-12, $300/90 days — always-free tier persists after). Region **us-central1**: US regions qualify for the GCS always-free tier and latency is irrelevant for a batch pipeline.
+- GCP project `openaq-pipeline` (billing linked; free trial started ~2026-07-12, $300/90 days — **ends 2026-10-11**, verified in the billing console 2026-08-30, which also showed **$0.00 spent and the full $300 credit unconsumed** after ~7 weeks of running the pipeline: the whole workload sits inside the always-free allowances, so the post-trial cost of keeping it alive is empirically ~$0 rather than merely estimated. The trial cannot be paused or extended. **Correction (2026-08-30):** the always-free tier does *not* persist on its own — it requires an active billing account, so a trial that closes without an upgrade takes the always-free allowance with it. Trial end stops all resources and marks data for deletion; a 30-day grace period allows full recovery by upgrading, after which resources are permanently deleted and the project ID can never be reused). Region **us-central1**: US regions qualify for the GCS always-free tier and latency is irrelevant for a batch pipeline.
 - `infra/` Terraform, 11 resources: API enablement (storage/bigquery/iam, `disable_on_destroy = false`), raw bucket `openaq-pipeline-openaq-raw` (versioned per G1 immutable-raw, uniform bucket-level access, public access prevention enforced, `force_destroy = false`), datasets `openaq_raw` + `openaq_dbt` in us-central1 (colocated with the bucket so GCS→BQ load jobs need no cross-region copy), SA `openaq-pipeline@…` with least-privilege grants — `storage.objectAdmin` on the bucket only, `bigquery.dataEditor` on the two datasets only, `bigquery.jobUser` at project level (BQ jobs are project-scoped; can't be narrower).
 - Remote tfstate in `gs://openaq-pipeline-tfstate` (versioned), bootstrapped manually via gcloud — the backend bucket cannot be provisioned by the state it stores. Documented in `infra/README.md`.
 - **No tables in Terraform** — `raw_measurements` is still `[ASSERTED]` and dbt owns its own relations; IaC pinning a guessed schema would couple infrastructure to it.
@@ -407,6 +407,31 @@ Done (the polish itself):
 - **As-of dates beside pinned numbers** → the README's finding and the dashboard spec carry
   theirs; every figure written this phase follows the rule.
 
+**Post-Phase-7 hygiene (2026-08-30, `chore/post-phase-7-hygiene`).** A sweep for anything left
+pending or stale once the roadmap closed:
+- **Mart exports committed** (`data/marts/*.csv`, 1,376 rows / 168 KB): the three mart tables as a
+  point-in-time snapshot, so the finding stays checkable from the repo alone. Motivation is concrete —
+  the GCP free trial closes 2026-10-11 (console-verified), and a trial that lapses without an upgrade takes the datasets
+  and the live dashboard with it. `mart_exceedance_summary.csv` reproduces the published figures with
+  their denominators (G8) and was diffed against the README's claims before committing. `int_daily_aqi`
+  (86k rows) deliberately excluded: megabytes rather than kilobytes, and the marts already carry the
+  completeness columns the caveats rest on.
+- **Free-tier claim corrected** in the Phase 1 record. It said the always-free tier "persists after" the
+  trial; it does not — always-free requires an *active* billing account, so an un-upgraded trial closure
+  removes it. Verified against Google's documentation: no automatic charge ever occurs (an explicit
+  upgrade is required), resources stop at trial end, a 30-day grace period allows full recovery by
+  upgrading, and after that resources are permanently deleted and **the project ID can never be reused**.
+  Recorded because the original wording would have led a future reader to assume the infrastructure was
+  safe by default.
+- **§8's asserted-schema question closed** — answered by Phase 3's live load and Phase 4's live build,
+  but never struck through, so it sat in "genuinely open questions" for four phases.
+- **Five redundant `.gitkeep` placeholders removed** (`airflow/dags`, `dbt/analyses`, `looker`,
+  `tests/unit`, `tests/integration`) — all now hold real tracked files, so the placeholders contradicted
+  their own Phase 0 purpose ("where directories must persist empty"). Three genuinely-empty directories
+  keep theirs.
+- **README dashboard dependency made explicit** — the live link depends on the GCP project; the snapshot,
+  spec, and mart exports are what outlive it.
+
 **Post-merge live observation (2026-07-19, closes the Phase 6 note about watching the lookback on the scheduled path):** with the stack brought up after two dark days, `catchup=False` created the single latest missed run (ds=2026-07-18), and its landed batch spans exactly 7 distinct measurement days (2026-07-12 → 2026-07-18, 26,698 records) — the `[ds−6, ds+1)` window verified live on the scheduled path. The Dataset event auto-triggered the transform (success), and `int_daily_aqi` is gapless through 2026-07-18 — including 2026-07-17, a ds that never got its own run: its data rode in on the ds=2026-07-18 window (the backfill had independently reached it too; either path alone suffices). Staging's latest-`ingested_at` dedup absorbed the 6-day overlap with existing batches exactly as designed.
 
 **Known liabilities carried forward:** the "remove CI workflows" commit remains in history (6524216) — not rewritten, just superseded.
@@ -524,7 +549,7 @@ Done (the polish itself):
 - **OpenAQ v3 free-tier rate limits — partially answered 2026-07-12:** response headers on a live call show `x-ratelimit-limit: 60` with `x-ratelimit-reset: 60`, i.e. **60 requests/minute**. The per-sensor fan-out makes this load-bearing: the Phase 2 client must throttle/backoff off these headers, and backfill (Phase 5) must budget for it. Whether an additional daily cap exists is still unconfirmed — watch for it during the first real ingestion runs.
 - ~~**The `OPENAQ_API_KEY` in `.env` is invalid**~~ **RESOLVED 2026-07-12:** the old key 401'd on probes of `/v3/countries` (2026-07-07 and 2026-07-12); regenerated at explore.openaq.org and verified live — HTTP 200, rate-limit headers captured (see above). No longer a Phase 2 blocker. (The 2026-07-07 probe also confirmed G2 empirically: `/v3/measurements?countries_id=...` returns 404 — the flat endpoint does not exist.)
 - ~~**Backfill volume**~~ **RESOLVED by the Phase 5 run (2026-07-18/19):** the wide-window math held — AE (13×60-day chunks) and PK (7 chunks, with the known-bad skip list) completed in roughly 3 hours wall time total, every chunk count-reconciled. **No daily API cap exists at this volume:** ~6k requests in one evening drew no throttling beyond the per-minute window.
-- **Verified vs asserted schema** — the GCS raw layout and measurement payload shape are now **verified** (§5, §7.5). `raw_measurements` (BQ table) and the parsed staging columns remain `[ASSERTED]` until Phase 3 lands the load job.
+- ~~**Verified vs asserted schema**~~ **RESOLVED — Phase 3/4 (noted 2026-08-30):** the GCS raw layout and payload shape were verified in Phase 2 (§5, §7.5); `raw_measurements` was verified against the live load on 2026-07-15 and the parsed staging columns against a live `dbt build` on 2026-07-17 (§5). Nothing in the pipeline is `[ASSERTED]` any more — the remaining mentions sit inside historical phase records, where they are correct as history.
 - ~~**Is `datetime_to` inclusive?**~~ **RESOLVED 2026-07-18 (live probe):** effectively exclusive — two abutting half-day windows over a sensor-day with exactly 24 hourly records returned 12+12 with zero overlap (the API returns periods starting in `[datetime_from, datetime_to)`). Abutting half-open windows never double-land a record; this is why exactly-24-record days were always observed. Backfill chunk edges and the G4 lookback window both rely on it.
 
 ---
@@ -558,3 +583,4 @@ Done (the polish itself):
 | 1.13 | 2026-07-20 | Pre-Phase-6 audit + hygiene PR. Verified clean: guardrails hold across all layers, pins agree, seeds exact, no secrets, root README current (test totals now 42 unit + 13 DAG + 1 integration). Fixed: backfill checkpoint write made atomic (temp file + `os.replace`; corrupt state file now fails loudly — previously a crash mid-write bricked resume); `history_gap_audit.sql` SQLFluff violations + lint scope extended to `dbt/analyses` in CI and `make lint`; Phase-5 additions propagated to `dbt/`/`infra/`/`ingestion/`/`airflow/` READMEs and `architecture.md` (elementary + `known_bad_sensors` + gap audit + lookback + backfill CLI); elementary/freshness make targets documented for the first time; §5 seed list completed. |
 | 1.14 | 2026-08-30 | Phase 6 complete (`feat/phase-6-serving`): Looker Studio dashboard live (three bands over three marts, spec + snapshot version-controlled in `looker/` because Looker Studio has no report-as-JSON export) and the finding written — PK exceeds the WHO 24h PM2.5 guideline on 100% of the 455 common-window days at ~5× the guideline vs AE's 94% at ~2.5×, caveated by AE's ~8 stations/day (zero of them reference monitors since Jun 2025) against PK's ~180. G8's days-based rate realized as `mart_exceedance_summary` (rates beside denominators and spans, `*_common` variants null where only one country reports the parameter); `rolling_7d_station_exceedance_rate` added to `mart_country_compare` as a ratio of sums. A 39-day outage gap (2026-07-22 → 08-29) closed by one catch-up backfill chunk per country, zero failed sensors, both reconciled; marts gapless to 2026-08-29 over 1.78M deduped measurements; dbt 121 nodes PASS=120/WARN=1/ERROR=0. §7.5: never average a rate across unequal denominators; the host venv's `dbt` binary is a stale-dependency artifact — the pinned dbt lives in the Airflow image. |
 | 1.15 | 2026-08-30 | Phase 7 complete (`feat/phase-7-polish`) — project complete. Audit folded in as the opening move: external state all green (CI, ruleset with five required checks, live GCP vs Terraform, no tracked secrets), and Phase 6's published figures re-derived from the live marts and confirmed. Two findings recorded: `days_exceedance_rate_common` is null-when-no-window via `safe_divide(0,0)` rather than the explicit guard (select-list aliases are invisible to siblings), and the headline scorecards mix a common-window rate with a full-span mean (accurate by margin, not construction). Polish: README rewritten around the exit criterion — finding front-and-center, a Mermaid architecture diagram, and a two-level "Running it" that walks the whole Level-2 path the old quickstart omitted; new `docs/runbook.md` (freshness, outage recovery with the 39-day catch-up as worked example, partly-failed runs, known failure modes) naming the alerting gap out loud; `architecture.md` de-duplicated against the README diagram; MIT `LICENSE` added; `bootstrap.sh` now sets `AIRFLOW_UID`; `tests/README.md` 42 → 44. Dev venv rebuilt clean (83 → 46 distributions, no phantom `dbt`), which surfaced an unpinned `chardet` conflicting with `requests` (§7.5). Verified totals: 44 unit + 13 DAG + 1 integration; dbt 121 nodes / 83 data tests. |
+| 1.16 | 2026-08-30 | Post-Phase-7 hygiene sweep. Mart exports committed to `data/marts/` (1,376 rows / 168 KB) so the finding survives the infrastructure — the free trial closes 2026-10-11 (console-verified; $0.00 of the $300 credit consumed, so the workload fits the always-free tier) and takes the datasets and live dashboard with it if not upgraded. Corrected the Phase 1 record's claim that the always-free tier persists after the trial (it requires an active billing account; verified against Google's docs, along with the no-automatic-charge, 30-day grace, and never-reusable-project-ID rules). Closed §8's asserted-schema question, answered back in Phase 3/4 but never struck through. Removed five `.gitkeep` placeholders in directories that now hold real files. README now states that the dashboard link depends on the GCP project while the snapshot, spec, and exports do not. |

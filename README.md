@@ -32,6 +32,12 @@ marts and moves daily.*
 **Dashboard:** [UAE vs Pakistan — Air Quality vs WHO Guidelines](https://datastudio.google.com/reporting/7c88238c-c153-4c64-bf5b-c1974f859158/page/9Fj4F)
 · spec and snapshot in [`looker/`](looker/)
 
+The dashboard reads BigQuery live, so it depends on the GCP project behind it.
+The snapshot below, the spec, and the mart exports in [`data/`](data/) are
+version-controlled precisely so the result outlives that dependency — the
+finding above can be checked against `data/marts/mart_exceedance_summary.csv`
+with no cloud account at all.
+
 [![Dashboard snapshot](looker/dashboard.png)](https://datastudio.google.com/reporting/7c88238c-c153-4c64-bf5b-c1974f859158/page/9Fj4F)
 
 ## Architecture
@@ -112,7 +118,8 @@ in `docs/PROJECT_CONTEXT.md` §4 as twelve numbered guardrails.
 ├── scripts/        Dev utility scripts (bootstrap)
 ├── tests/          Pytest suite (unit + DAG integrity + live integration test)
 ├── docs/           PROJECT_CONTEXT.md (source of truth), architecture, runbook
-└── looker/         Dashboard spec + snapshot (Looker Studio has no report export)
+├── looker/         Dashboard spec + snapshot (Looker Studio has no report export)
+└── data/           Mart exports — the finding, verifiable without a cloud account
 ```
 
 Every directory has its own README describing what's in it and why.
