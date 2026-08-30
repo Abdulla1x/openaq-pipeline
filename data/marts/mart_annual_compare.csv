@@ -1,0 +1,8 @@
+country_code,parameter,unit,measurement_year,annual_mean,days_with_data,locations_with_data,reading_count,threshold_annual,exceeds_annual
+AE,pm10,µg/m³,2025,39.363504305706385,13,3,744,15.0,true
+AE,pm10,µg/m³,2024,45.59620542846035,160,4,7816,15.0,true
+AE,pm25,µg/m³,2024,40.167554963953386,160,4,7816,5.0,true
+AE,pm25,µg/m³,2025,38.53032751483435,337,10,43214,5.0,true
+AE,pm25,µg/m³,2026,34.535583908399694,241,12,46060,5.0,true
+PK,pm25,µg/m³,2026,65.28647894446347,241,339,1017070,5.0,true
+PK,pm25,µg/m³,2025,110.33498760798297,214,372,658841,5.0,true

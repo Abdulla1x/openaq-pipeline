@@ -1,0 +1,4 @@
+country_code,parameter,unit,threshold_24h,first_day_with_data,last_day_with_data,days_with_data,days_comparable,days_exceeded,mean_country_daily_avg,station_days_exceeded,station_days_comparable,common_span_start,days_comparable_common,days_exceeded_common,days_exceedance_rate,station_days_exceedance_rate,days_exceedance_rate_common
+AE,pm10,µg/m³,45.0,2024-07-25,2025-01-13,173,173,82,45.16236537625213,182,373,,,,47.398843930635834,48.793565683646115,
+AE,pm25,µg/m³,15.0,2024-07-25,2026-08-29,738,738,691,37.368113770950046,3803,4138,2025-06-01,455,426,93.63143631436314,91.90430159497342,93.62637362637362
+PK,pm25,µg/m³,15.0,2025-06-01,2026-08-29,455,455,455,75.49058998334644,77809,81880,2025-06-01,455,455,100.0,95.02808988764045,100.0
