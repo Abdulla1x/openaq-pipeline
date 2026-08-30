@@ -15,9 +15,13 @@ echo "✓ Required tools found (docker, git, python3)"
 # Copy .env.example to .env if it does not already exist
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "✓ Created .env from .env.example"
+  # Containers write into ./logs as this uid; leaving the template's 50000 on a
+  # host with a different uid leaves those files foreign-owned and unwritable.
+  sed -i "s/^AIRFLOW_UID=.*/AIRFLOW_UID=$(id -u)/" .env
+  echo "✓ Created .env from .env.example (AIRFLOW_UID set to $(id -u))"
   echo "  Fill in: GCP_PROJECT_ID, GCS_BUCKET_NAME, OPENAQ_API_KEY, GOOGLE_APPLICATION_CREDENTIALS,"
   echo "           GCP_KEY_FILE (host path to the SA key — docker compose refuses to start without it)"
+  echo "  Check:   BIGQUERY_LOCATION must equal the datasets' region (default us-central1)"
   echo "  Generate FERNET_KEY (compose's fallback is not a valid key):"
   echo "    python3 -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
 else
