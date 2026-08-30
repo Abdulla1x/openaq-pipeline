@@ -57,8 +57,7 @@ gcp_keyfile.json
 *.sublime-workspace
 
 # ── Local working notes — private session context, never committed ───────────
-CLAUDE.local.md
-.claude/
+*.local.md
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

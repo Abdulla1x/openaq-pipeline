@@ -20,7 +20,7 @@ real values inside the repo.
 |---|---|---|
 | Staging (views) | `stg_measurements`, `stg_locations`, `stg_sensors` | Parse raw JSON pages (G1), dedup append batches (G4). Measurement payloads carry no ids — sensor/country identity is parsed from `source_uri`; the sensor→location bridge comes from the landed locations inventory |
 | Intermediate (table) | `int_daily_aqi` | Station-day aggregates with completeness as columns (`reading_count`, `hours_covered`) — never a silent filter (G7) |
-| Mart (tables) | `mart_country_compare`, `mart_annual_compare` | Daily vs 24h thresholds and annual vs annual thresholds, kept in separate models (grain discipline, G6); exceedance rates carry explicit denominators (G8) |
+| Mart (tables) | `mart_country_compare`, `mart_annual_compare`, `mart_exceedance_summary` | Daily vs 24h thresholds and annual vs annual thresholds, kept in separate models (grain discipline, G6); the summary mart rolls the daily mart up to one row per (country, parameter) for the dashboard's scorecards. Every exceedance rate carries its explicit denominator (G8) — per-day stations, all-time days, and station-days — and `rolling_7d_station_exceedance_rate` smooths the daily share as a ratio of sums, never a mean of rates |
 
 ## Seeds
 

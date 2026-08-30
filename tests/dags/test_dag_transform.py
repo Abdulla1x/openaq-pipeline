@@ -38,6 +38,8 @@ EXPECTED_TASK_IDS = {
     "mart_country_compare.test",
     "mart_annual_compare.run",
     "mart_annual_compare.test",
+    "mart_exceedance_summary.run",
+    "mart_exceedance_summary.test",
 }
 
 
@@ -82,6 +84,11 @@ def test_dbt_tests_gate_downstream_models(transform_dag):
             "int_daily_aqi.test",
             "who_thresholds.test",
         }
+    # The summary mart refs mart_country_compare only (DRY: the threshold
+    # join is defined once), so cosmos gates it on that mart's tests.
+    assert transform_dag.get_task("mart_exceedance_summary.run").upstream_task_ids == {
+        "mart_country_compare.test",
+    }
 
 
 def test_dag_config(transform_dag):

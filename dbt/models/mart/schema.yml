@@ -47,6 +47,20 @@ models:
         description: >
           country_daily_avg averaged over a 7-calendar-day range window
           (not 7 rows — day gaps must not widen the window).
+      - name: rolling_7d_station_exceedance_rate
+        description: >
+          Share of station-days exceeding over the same 7-calendar-day
+          window — sum(locations_exceeding) / sum(locations_comparable), a
+          ratio of sums rather than a mean of daily rates, so a thin-coverage
+          day cannot weigh as much as a full one (G8: the denominator stays a
+          real quantity). Null when no station-day in the window had a
+          matching 24h threshold. The daily exceedance_rate remains the
+          unsmoothed source; this column exists because the daily series is
+          too dense to read a trend from.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
 
   - name: mart_annual_compare
     description: >
@@ -82,3 +96,106 @@ models:
         description: >
           annual_mean strictly above threshold_annual; null when the pollutant
           has no 2021 annual guideline in its unit (e.g. SO2, CO).
+
+  - name: mart_exceedance_summary
+    description: >
+      G8's days-based exceedance rate, realized in Phase 6 as the serving
+      mart. Grain: (country_code, parameter). Sourced from
+      mart_country_compare only, so the threshold join and country-day
+      average are defined once. Every rate sits beside its denominator
+      (G8) and span (G7); *_common columns restrict to the parameter's
+      common window across countries and are null when only one country
+      reports it (pm10 is AE-only in practice — PK's pm10 sensors
+      delivered no in-span data).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [country_code, parameter]
+    columns:
+      - name: country_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [AE, PK]
+      - name: parameter
+        data_tests: [not_null]
+      - name: first_day_with_data
+        data_tests: [not_null]
+      - name: last_day_with_data
+        data_tests: [not_null]
+      - name: threshold_24h
+        description: WHO 2021 24h guideline matched on pollutant + unit (G5/G6).
+      - name: days_with_data
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: days_comparable
+        description: >
+          The days-rate denominator (G8) — country-days with a matching 24h
+          threshold; days without one leave the denominator only, never the
+          table.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: days_exceeded
+        description: >
+          Country-days whose country_daily_avg strictly exceeded
+          threshold_24h.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: station_days_exceeded
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: station_days_comparable
+        description: Denominator of the station-day framing (G8).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: common_span_start
+        description: >
+          The parameter's latest first-day-with-data across countries; the
+          *_common columns count only days on or after it, so neither
+          country's extra history skews the comparison (AE starts 11 months
+          before PK). Null when fewer than two countries report the
+          parameter — no comparison, no common window.
+      - name: days_comparable_common
+        description: Null (with the whole *_common family) when there is no common window.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: days_exceeded_common
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: days_exceedance_rate
+        description: >
+          days_exceeded / days_comparable * 100 over the country's full
+          span. Null only when days_comparable is 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      - name: station_days_exceedance_rate
+        description: >
+          station_days_exceeded / station_days_comparable * 100 — the
+          station-day framing of the same question.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      - name: days_exceedance_rate_common
+        description: >
+          The days rate restricted to the common window. Null when no
+          common window exists (single-country parameters like pm10) or
+          when the windows never overlap — either way there is no
+          comparison to publish, and a null is the honest output.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
