@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md — OpenAQ Pipeline
 
 > **Document type:** Living source of truth. Version-controlled, updated at the end of every phase.
-> **Version:** 1.14 · **Last updated:** 2026-08-30 · **Current phase:** Phase 6 complete; Phase 7 (polish) next
+> **Version:** 1.15 · **Last updated:** 2026-08-30 · **Current phase:** Phase 7 complete — all seven phases done
 > **Canonical location:** `docs/PROJECT_CONTEXT.md` in the repo.
 
 ---
@@ -311,12 +311,99 @@ New in this window vs. the Phase 5 reading: AE's PM2.5 now comes from **zero** r
 - [x] One-sentence finding written, caveated by coverage — above, and carried in the root README, `looker/dashboard_spec.md`, and the report itself
 - [x] dbt build green against live BigQuery — 121 nodes, PASS=120 / WARN=1 / ERROR=0; the one warning is the known `value:null` drift signal (still exactly 19 records, AE sensor 13144205)
 
-**Carried into Phase 7 (recorded, deliberate):**
-- **Dev-venv drift breaks the "stranger can run it" criterion.** `.venv` still physically holds `sqlfluff-templater-dbt` and the dbt-core 1.11 it drags in, dropped from `pyproject.toml` in Phase 5 but never uninstalled (§7.5). A venv built fresh from `pyproject.toml` is therefore *not* the venv on this machine — exactly the gap Phase 7's exit criterion targets. Uninstall, rebuild clean, re-verify `make lint` / `make test` from that rebuild.
-- **The outage runbook is undocumented.** `catchup=False` plus the 7-day lookback cannot heal a multi-week dark period — proved by the 39-day gap Phase 6 opened with. The README needs the recipe: one backfill chunk per country over the missed window, then a dbt build. Related: the compose `scheduler` and `webserver` exited **127** on ~2026-07-22 and stayed down until noticed five weeks later, which is how the gap formed. Nothing alerts on a dark stack; Phase 7 should at minimum say so out loud.
-- **No separate pre-Phase-7 audit — fold it into Phase 7's opening move.** Phases 1–6 were each preceded by a `chore/pre-phase-N-hygiene` PR, and all six found something real (the pre-5 sweep caught `rolling_7d_avg` being a 7-*row* window; pre-6 caught non-atomic checkpoint writes that bricked backfill resume). The habit stays, but Phase 7 is the exception to the *separate PR*: its exit criterion — "a stranger can run it from the README" — is itself the docs-versus-reality comparison the audit performs, so a preceding audit PR and the polish PR would duplicate each other days apart. Phase 7 therefore opens with the audit and carries the findings into its own work. Do the external-state checks first regardless (CI green on main, branch-protection rules via the GitHub API, tfstate and datasets present, no secrets tracked) — they are cheap and cannot be inferred from reading the tree.
-- **As-of dates must ride beside pinned numbers.** The dashboard is live against the marts and moves daily, but the figures quoted in the root README, `looker/dashboard_spec.md`, and §7 above are pinned to data through 2026-08-29. Any hard number in prose needs its as-of date adjacent, or the docs quietly become wrong.
+**Phase 7 — complete (`feat/phase-7-polish`, 2026-08-30).**
 
+Opened with the audit folded in (per the Phase 6 decision below), then the polish work.
+
+**Audit — external state (all green, 2026-08-30):** CI success on `main` (run 33299146982,
+the PR #16 merge); branch-protection ruleset 18305588 enforcing `deletion`,
+`non_fast_forward`, `pull_request`, and all five required checks
+(`lint`/`dbt-parse`/`pytest`/`terraform`/`dag-validate`) — re-probed via the GitHub rules
+API, which two earlier audits had to skip because `gh` was not installed locally (it now
+is); live GCP matches Terraform (tfstate object present, raw bucket and all three datasets
+in place); no credential-shaped strings in any tracked file (`dbt/profiles.yml` is the only
+sensitive-*looking* tracked path, committed by design under G10). §2 stack versions
+re-verified against the installed binaries: Docker 29.5.3, Terraform 1.15.8.
+
+**Audit — in-tree.** Scope was exactly the diff since the pre-Phase-6 hygiene merge (PR #14):
+`mart_exceedance_summary` (new), `mart_country_compare`'s rolling ratio-of-sums, the 12 new
+schema tests, and docs. Guardrail checks held — G6 grain separation, G8 denominators, and
+the ratio-of-sums rule are all correctly realized. **Phase 6's published figures re-derived
+from the live marts and confirmed:** AE pm25 93.6% (both full-span 691/738 and common-window
+426/455 — they coincide to the quoted "94%"), PK 100% (455/455), means 37.4/36.8 and 75.5
+µg/m³, and AE pm10's `*_common` columns and rate all null, since pm10 has no common window.
+
+Two findings, both recorded rather than latent-fixed:
+- **`days_exceedance_rate_common` is null-when-no-window by a second mechanism, not the
+  explicit guard.** A select-list alias is not visible to sibling expressions in BigQuery,
+  so the `safe_divide` reads `summary`'s raw `0/0` rather than the nulled aliases, and
+  `safe_divide(0, 0)` is null. Correct — verified live on AE pm10 — but load-bearing on that
+  identity; commented in the model so a future sentinel-instead-of-null change cannot
+  silently break it.
+- **The headline scorecards mix windows.** The two exceedance rates are common-window
+  columns; `mean_country_daily_avg` is full-span, and the model publishes no common-window
+  mean. The finding text is accurate because the numbers happen to agree (AE 37.4 full-span
+  vs 36.8 common-window, both "37"; PK's own span *is* the common window) — accurate by
+  margin, not by construction. Recorded in `looker/dashboard_spec.md` beside the scorecards.
+
+Also found and fixed: `tests/README.md` still claimed 42 unit tests (44); `scripts/bootstrap.sh`
+never touched `AIRFLOW_UID`, so any host whose uid isn't 50000 got foreign-owned `logs/` —
+it now sets `AIRFLOW_UID=$(id -u)` when creating `.env` and flags `BIGQUERY_LOCATION`.
+
+Done (the polish itself):
+- **README rewritten around the exit criterion.** The finding stays front-and-center with
+  its as-of date and the dashboard snapshot; a **Mermaid architecture diagram** (GitHub
+  renders it natively — diffable, reviewable in a PR, no binary to drift) replaces the
+  absent one; and "Running it" is now two honest levels: **Level 1** verifies the code in
+  ~2 minutes with nothing but Python 3.12, **Level 2** runs the pipeline and states plainly
+  that it needs your own GCP project and OpenAQ key. Level 2 walks the path the old
+  six-line quickstart omitted entirely — the hand-bootstrapped tfstate bucket, `terraform
+  apply`, the gcloud-created SA key, the four `.env` values that actually bite
+  (`GCP_KEY_FILE` is a hard compose `:?` guard), **unpausing the DAG**, and the two
+  non-failures (a green run with failed sensors; most sensors returning nothing). A "What
+  this is, and what it isn't" section carries the deliberate-over-engineering stance to
+  where a stranger reads it first.
+- **`docs/runbook.md`** (new): freshness as the one health check, the outage-recovery
+  recipe with the 39-day catch-up as its worked example, reading a partly-failed run, the
+  append-safe rerun contract, and the failure modes this project actually hit
+  (cross-referenced to §7.5 rather than re-argued).
+- **The alerting gap said out loud**, in both the runbook and the README: `catchup=False`
+  plus a 7-day lookback cannot heal a multi-week dark period; `make freshness` is the only
+  detector that exists; nothing runs it on a schedule. Named as a real limitation of a
+  laptop-hosted stack instead of implying coverage the project does not have.
+- **One source per diagram:** `docs/architecture.md` dropped its ASCII copy and links the
+  README's rendered diagram; §3 here keeps its ASCII, this document being self-contained.
+- **Dev-venv drift resolved** (the carry-over below): `.venv` rebuilt from
+  `pyproject.toml` + `requirements-dev.txt` — **83 distributions down to 46**, no phantom
+  `dbt` binary. `make lint` and `make test` green from that rebuild, which is the real
+  assertion: SQLFluff still passes with no dbt templater installed, because `.sqlfluff`
+  deliberately uses the jinja templater. The clean rebuild surfaced a warning the drifted
+  venv had masked — see §7.5.
+- **`LICENSE`** (MIT) added; the repo was public with no license, i.e. legally
+  all-rights-reserved. GitHub repo homepage pointed at the dashboard and topics set.
+
+**Current verified totals (supersede all earlier point-in-time counts):** 44 unit + 13 DAG
++ 1 integration pytest; dbt 121 nodes — 7 project models + 29 Elementary models, 2 seeds,
+83 data tests.
+
+**Phase 7 exit criteria — verified (2026-08-30):**
+- [x] A stranger can run it from the README — Level 1 walked verbatim from a fresh clone of
+      the committed branch into a scratch directory: venv, install, 44 tests, ruff, sqlfluff,
+      and `make test` all green, with no step requiring knowledge the page doesn't state. The
+      first walk failed on line one and changed the instructions (§7.5). Level 2's every path,
+      env var, and command checked against `docker-compose.yml`, `.env.example`, `infra/`,
+      and the Makefile.
+- [x] Finding front-and-center — second section of the README, with its coverage caveat,
+      as-of date, dashboard link, and snapshot.
+- [x] Architecture diagram present — Mermaid `flowchart TD` in the README, rendering
+      confirmed on github.com.
+
+**Carried into Phase 7 — all four resolved:**
+- **Dev-venv drift** → rebuilt clean; 83 → 46 distributions, `make lint`/`make test` green.
+- **Outage runbook undocumented** → `docs/runbook.md`, with the alerting gap named.
+- **No separate pre-Phase-7 audit** → folded in as the phase's opening move, above.
+- **As-of dates beside pinned numbers** → the README's finding and the dashboard spec carry
+  theirs; every figure written this phase follows the rule.
 
 **Post-merge live observation (2026-07-19, closes the Phase 6 note about watching the lookback on the scheduled path):** with the stack brought up after two dark days, `catchup=False` created the single latest missed run (ds=2026-07-18), and its landed batch spans exactly 7 distinct measurement days (2026-07-12 → 2026-07-18, 26,698 records) — the `[ds−6, ds+1)` window verified live on the scheduled path. The Dataset event auto-triggered the transform (success), and `int_daily_aqi` is gapless through 2026-07-18 — including 2026-07-17, a ds that never got its own run: its data rode in on the ds=2026-07-18 window (the backfill had independently reached it too; either path alone suffices). Staging's latest-`ingested_at` dedup absorbed the 6-day overlap with existing batches exactly as designed.
 
@@ -396,6 +483,36 @@ New in this window vs. the Phase 5 reading: AE's PM2.5 now comes from **zero** r
 - **(2026-07-19) Compose exec-form healthchecks don't expand variables.** The scheduler healthcheck used `["CMD", …, "--hostname", "$${HOSTNAME}"]`; compose unescapes `$$` to a literal `${HOSTNAME}`, and exec form never invokes a shell — so the check queried a hostname that can't exist and had failed on every 30s interval since the file was written, with a live scheduler underneath. Nothing gated on it, so it was silently wrong for six phases. Fixed with `CMD-SHELL` (the upstream reference compose does the same, for this reason). Rule: a healthcheck that has never been seen green is unverified code — check it once on day one.
 - **(Phase 6) Never average a rate across groups with unequal denominators.** The dashboard's smoothed station-exceedance series was first written as a 7-day average of the daily `exceedance_rate`. That silently weights a 3-station AE day the same as a 180-station PK day, so the "share of stations exceeding" it plots is a share of nothing real. The correct form sums numerator and denominator across the window and divides once (ratio of sums). Verified against the model on the days where the two formulas diverge — up to 3.6 points apart on uneven-coverage days. This is the same family of error as G6's grain discipline and G8's exposed denominator: a statistic is only meaningful with its denominator attached, and that stays true when you aggregate it.
 - **(Phase 6) The host dev venv carries a `dbt` binary that cannot work.** `dbt build` from `.venv` dies with `No module named 'dbt.adapters.bigquery'` — because `sqlfluff-templater-dbt` is still physically installed there and pulled dbt-core 1.11.12 as a transitive dep, even though the Phase 5 hygiene pass removed that package from `pyproject.toml` (removing a declared dependency does not uninstall it from an existing venv). The project's real dbt environment is the Airflow image, at the pinned 1.8.3 — which the Makefile already says for `freshness`/`elementary-bootstrap`. Run ad-hoc dbt the same way: `docker compose run --rm --no-deps webserver bash -c "cd /opt/airflow/dbt && dbt <cmd>"`. Rule: a stale venv is not evidence of a project's declared dependencies; check `pyproject.toml`, and prefer the pinned runtime over whatever the host happens to have.
+- **(Phase 7) A drifted venv hides dependency conflicts as much as it invents them.** The
+  Phase 6 note below covers what the stale `.venv` *added* (a `dbt` binary that can't work).
+  Rebuilding it clean surfaced the opposite: `sqlfluff` requires `chardet` unpinned, which
+  now resolves to 7.6.0 — outside the range `requests` 2.31.0 supports — so every `make test`
+  emitted a `RequestsDependencyWarning` that the old venv's dbt-constrained resolution had
+  masked. Pinned `chardet==5.2.0` in `requirements-dev.txt` (dev-only; the Airflow image
+  resolves this under constraints-2.9.1). Rule: rebuild the venv to learn what your declared
+  dependencies actually resolve to — a long-lived venv is a cache of past resolutions, not
+  evidence about the present ones.
+- **(Phase 7) A select-list alias is invisible to its siblings.** In BigQuery an expression
+  in a `SELECT` list cannot reference another alias defined in that same list, so
+  `mart_exceedance_summary`'s `safe_divide(days_exceeded_common, days_comparable_common)`
+  reads the *pre-guard* columns from the CTE, not the `if(... is null, null, ...)` aliases
+  one line above it. The result is right (`safe_divide(0, 0)` is null, verified live on AE
+  pm10) but rests on that identity rather than on the guard it appears to use. Commented in
+  place. The general shape: when a column and a guarded version of it share a name in one
+  select, verify which one each expression actually binds to.
+- **(Phase 7) "A stranger can run it" is only verified by actually walking it — and the
+  first walk failed on the first line.** The rewritten README opened with
+  `python3.12 -m venv .venv`. Run from a fresh clone it died instantly with
+  `python3.12: command not found`: this host's `python3` is 3.14.4 and the project's 3.12 is
+  uv-managed (§7.5, 2026-07-12), so no such binary is on `PATH`. The instruction had been
+  written from knowledge of the environment rather than from the environment, which is
+  precisely the failure the criterion exists to catch — and reading the page back would never
+  have caught it, because reading is the same act that wrote it. Fixed by leading with the
+  `uv` route (it fetches the 3.12 interpreter itself) and offering the stdlib venv only where
+  `python3 --version` already reports 3.12. Then re-walked from a clean clone of the
+  committed branch: install, 44 tests, ruff, sqlfluff, and `make test` all green. Same lesson
+  as the 2026-07-07 scaffold READMEs from the other direction — docs drift from reality by
+  omission and by assumed context as readily as by staleness.
 - **(2026-07-12 audit) dbt `+schema:` is a suffix, not a target.** With the default `generate_schema_name` macro, `+schema: dbt` on top of a profile `dataset: openaq_dbt` yields `openaq_dbt_dbt`. The least-privilege SA (dataset-scoped `dataEditor`, no dataset-create permission) would have turned this into a hard permission failure in Phase 4 — removed the overrides; the profile's dataset is the single source of the target.
 
 ---
@@ -438,3 +555,4 @@ New in this window vs. the Phase 5 reading: AE's PM2.5 now comes from **zero** r
 | 1.12 | 2026-07-19 | Post-Phase-5 live observation + compose fix (`fix/scheduler-healthcheck`). The 7-day lookback verified on the scheduled path: catchup=False created the single missed run (ds=2026-07-18), its batch spans exactly 2026-07-12→18 (26,698 records), Dataset auto-triggered the transform, marts gapless through 07-18 (closes the §7 Phase 6 note). Fixed: the scheduler healthcheck had never once passed — exec-form CMD passes `$${HOSTNAME}` as a literal; now CMD-SHELL (§7.5). |
 | 1.13 | 2026-07-20 | Pre-Phase-6 audit + hygiene PR. Verified clean: guardrails hold across all layers, pins agree, seeds exact, no secrets, root README current (test totals now 42 unit + 13 DAG + 1 integration). Fixed: backfill checkpoint write made atomic (temp file + `os.replace`; corrupt state file now fails loudly — previously a crash mid-write bricked resume); `history_gap_audit.sql` SQLFluff violations + lint scope extended to `dbt/analyses` in CI and `make lint`; Phase-5 additions propagated to `dbt/`/`infra/`/`ingestion/`/`airflow/` READMEs and `architecture.md` (elementary + `known_bad_sensors` + gap audit + lookback + backfill CLI); elementary/freshness make targets documented for the first time; §5 seed list completed. |
 | 1.14 | 2026-08-30 | Phase 6 complete (`feat/phase-6-serving`): Looker Studio dashboard live (three bands over three marts, spec + snapshot version-controlled in `looker/` because Looker Studio has no report-as-JSON export) and the finding written — PK exceeds the WHO 24h PM2.5 guideline on 100% of the 455 common-window days at ~5× the guideline vs AE's 94% at ~2.5×, caveated by AE's ~8 stations/day (zero of them reference monitors since Jun 2025) against PK's ~180. G8's days-based rate realized as `mart_exceedance_summary` (rates beside denominators and spans, `*_common` variants null where only one country reports the parameter); `rolling_7d_station_exceedance_rate` added to `mart_country_compare` as a ratio of sums. A 39-day outage gap (2026-07-22 → 08-29) closed by one catch-up backfill chunk per country, zero failed sensors, both reconciled; marts gapless to 2026-08-29 over 1.78M deduped measurements; dbt 121 nodes PASS=120/WARN=1/ERROR=0. §7.5: never average a rate across unequal denominators; the host venv's `dbt` binary is a stale-dependency artifact — the pinned dbt lives in the Airflow image. |
+| 1.15 | 2026-08-30 | Phase 7 complete (`feat/phase-7-polish`) — project complete. Audit folded in as the opening move: external state all green (CI, ruleset with five required checks, live GCP vs Terraform, no tracked secrets), and Phase 6's published figures re-derived from the live marts and confirmed. Two findings recorded: `days_exceedance_rate_common` is null-when-no-window via `safe_divide(0,0)` rather than the explicit guard (select-list aliases are invisible to siblings), and the headline scorecards mix a common-window rate with a full-span mean (accurate by margin, not construction). Polish: README rewritten around the exit criterion — finding front-and-center, a Mermaid architecture diagram, and a two-level "Running it" that walks the whole Level-2 path the old quickstart omitted; new `docs/runbook.md` (freshness, outage recovery with the 39-day catch-up as worked example, partly-failed runs, known failure modes) naming the alerting gap out loud; `architecture.md` de-duplicated against the README diagram; MIT `LICENSE` added; `bootstrap.sh` now sets `AIRFLOW_UID`; `tests/README.md` 42 → 44. Dev venv rebuilt clean (83 → 46 distributions, no phantom `dbt`), which surfaced an unpinned `chardet` conflicting with `requests` (§7.5). Verified totals: 44 unit + 13 DAG + 1 integration; dbt 121 nodes / 83 data tests. |
